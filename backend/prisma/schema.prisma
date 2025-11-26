@@ -1,0 +1,114 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Tenant {
+  id                String             @id @default(cuid())
+  name              String
+  users             User[]
+  campaigns         Campaign[]
+  googleAdsAccounts GoogleAdsAccount[] @relation("GoogleAdsAccounts")
+  apiConnections    APIConnection[]
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+}
+
+model User {
+  id        String    @id @default(cuid())
+  email     String    @unique
+  password  String
+  name      String?
+  role      String    @default("CLIENT")
+  isActive  Boolean   @default(true)
+  tenantId  String
+  tenant    Tenant    @relation(fields: [tenantId], references: [id])
+  sessions  Session[]
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id])
+  refreshToken String   @unique
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+}
+
+model Campaign {
+  id                  String    @id @default(cuid())
+  name                String
+  platform            String
+  status              String
+  budget              Float?
+  startDate           DateTime?
+  endDate             DateTime?
+  externalId          String?
+  googleAdsAccountId  String?
+  lastSyncedAt        DateTime?
+  syncStatus          String?   @default("pending")
+  tenantId            String
+  tenant              Tenant    @relation(fields: [tenantId], references: [id])
+  metrics             Metric[]
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  @@unique([tenantId, externalId])
+}
+
+model Metric {
+  id          String   @id @default(cuid())
+  campaignId  String
+  campaign    Campaign @relation(fields: [campaignId], references: [id])
+  date        DateTime
+  impressions Int
+  clicks      Int
+  spend       Float
+  conversions Int
+  revenue     Float
+  ctr         Float    @default(0)
+  cpc         Float    @default(0)
+  cpm         Float    @default(0)
+  roas        Float    @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([campaignId, date])
+}
+
+model GoogleAdsAccount {
+  id              String    @id @default(cuid())
+  tenantId        String
+  tenant          Tenant    @relation(fields: [tenantId], references: [id], name: "GoogleAdsAccounts")
+  customerId      String
+  customerName    String?
+  accessToken     String
+  refreshToken    String
+  tokenExpiresAt  DateTime?
+  status          String    @default("active")
+  lastSyncAt      DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@unique([tenantId, customerId])
+}
+
+model APIConnection {
+  id          String   @id @default(cuid())
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id])
+  platform    String
+  credentials String   // JSON string
+  isActive    Boolean  @default(true)
+  lastSyncAt  DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([tenantId, platform])
+}

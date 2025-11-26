@@ -1,0 +1,26 @@
+{
+  "name": "rga-dashboard-complete",
+  "version": "1.0.0",
+  "description": "RGA Marketing Dashboard - Full Stack Application",
+  "private": true,
+  "scripts": {
+    "install-all": "npm install && cd backend && npm install && cd ../frontend && npm install && cd ..",
+    "backend:dev": "cd backend && npm run start:dev",
+    "backend:build": "cd backend && npm run build",
+    "backend:start": "cd backend && npm run start:prod",
+    "frontend:dev": "cd frontend && npm run dev",
+    "frontend:build": "cd frontend && npm run build",
+    "frontend:preview": "cd frontend && npm run preview",
+    "dev": "echo 'Please run backend and frontend in separate terminals' && echo 'Terminal 1: npm run backend:dev' && echo 'Terminal 2: npm run frontend:dev'",
+    "build": "npm run backend:build && npm run frontend:build"
+  },
+  "keywords": [
+    "rga",
+    "dashboard",
+    "marketing",
+    "nestjs",
+    "react"
+  ],
+  "author": "RGA Team",
+  "license": "MIT"
+}
