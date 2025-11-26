@@ -3,6 +3,7 @@ import { GoogleAdsApi, enums } from 'google-ads-api';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../prisma/prisma.service';
 import { google } from 'googleapis';
+import { GoogleAdsClientService } from './services/google-ads-client.service';
 
 @Injectable()
 export class GoogleAdsCampaignService {
@@ -12,6 +13,7 @@ export class GoogleAdsCampaignService {
   constructor(
     private readonly configService: ConfigService,
     private readonly prisma: PrismaService,
+    private readonly googleAdsClientService: GoogleAdsClientService,
   ) {
     // Initialize OAuth2 client for token refresh
     this.oauth2Client = new google.auth.OAuth2(
@@ -25,8 +27,8 @@ export class GoogleAdsCampaignService {
    */
   private async refreshTokenIfNeeded(account: any): Promise<void> {
     const now = new Date();
-    const shouldRefresh = 
-      !account.tokenExpiresAt || 
+    const shouldRefresh =
+      !account.tokenExpiresAt ||
       account.tokenExpiresAt < now ||
       !account.accessToken;
 
@@ -68,221 +70,152 @@ export class GoogleAdsCampaignService {
   /**
    * Fetch campaigns from Google Ads API
    */
+  /**
+   * Fetch campaigns from Google Ads API
+   */
   async fetchCampaigns(accountId: string) {
-    this.logger.log(`Fetching campaigns for account: ${accountId}`);
-
-    // Get account from database
+    // 1. Get Google Ads account from database
     const account = await this.prisma.googleAdsAccount.findUnique({
       where: { id: accountId },
     });
 
-    if (!account) {
-      throw new NotFoundException(`Google Ads account not found: ${accountId}`);
+    if (!account || !account.refreshToken) {
+      throw new Error('Google Ads account not found or not connected');
     }
 
-    if (!account.refreshToken) {
-      throw new BadRequestException('Account not authenticated. Please reconnect your Google Ads account.');
-    }
+    // 2. Get Customer instance from GoogleAdsClientService
+    const customer = this.googleAdsClientService.getCustomer(
+      account.customerId,
+      account.refreshToken,
+    );
 
-    // Refresh token if needed
-    await this.refreshTokenIfNeeded(account);
+    // 3. GAQL Query (Google Ads Query Language)
+    const query = `
+      SELECT
+        campaign.id,
+        campaign.name,
+        campaign.status,
+        campaign.advertising_channel_type,
+        metrics.clicks,
+        metrics.impressions,
+        metrics.cost_micros,
+        metrics.conversions,
+        metrics.ctr
+      FROM campaign
+      WHERE campaign.status IN ('ENABLED', 'PAUSED')
+      ORDER BY campaign.id
+    `;
 
     try {
-      // Initialize Google Ads API client
-      const client = new GoogleAdsApi({
-        client_id: this.configService.get('GOOGLE_CLIENT_ID'),
-        client_secret: this.configService.get('GOOGLE_CLIENT_SECRET'),
-        developer_token: this.configService.get('GOOGLE_ADS_DEVELOPER_TOKEN'),
-      });
+      // 4. Execute query
+      const results = await customer.query(query);
 
-      // Create customer instance
-      const customer = client.Customer({
-        customer_id: account.customerId,
-        refresh_token: account.refreshToken,
-        login_customer_id: this.configService.get('GOOGLE_ADS_LOGIN_CUSTOMER_ID'),
-      });
+      // Helper function to map Google Ads status to string
+      const mapStatus = (status: number): string => {
+        switch (status) {
+          case 2:
+            return 'ENABLED';
+          case 3:
+            return 'PAUSED';
+          case 4:
+            return 'REMOVED';
+          default:
+            return 'UNKNOWN';
+        }
+      };
 
-      // Query campaigns
-      const campaigns = await customer.query(`
-        SELECT
-          campaign.id,
-          campaign.name,
-          campaign.status,
-          campaign.advertising_channel_type,
-          campaign.start_date,
-          campaign.end_date,
-          metrics.impressions,
-          metrics.clicks,
-          metrics.cost_micros
-        FROM campaign
-        WHERE campaign.status != 'REMOVED'
-        ORDER BY campaign.name
-      `);
-
-      this.logger.log(`Fetched ${campaigns.length} campaigns`);
-
-      // Transform campaigns
-      const transformedCampaigns = campaigns.map((row: any) => ({
-        externalId: row.campaign.id.toString(),
-        name: row.campaign.name,
-        status: this.mapCampaignStatus(row.campaign.status),
-        type: row.campaign.advertising_channel_type,
-        startDate: row.campaign.start_date,
-        endDate: row.campaign.end_date,
-        metrics: {
-          impressions: parseInt(row.metrics?.impressions || '0'),
-          clicks: parseInt(row.metrics?.clicks || '0'),
-          cost: (row.metrics?.cost_micros || 0) / 1000000,
-        },
-      }));
-
+      // 5. Transform results
       return {
         accountId: account.id,
         accountName: account.customerName || account.customerId,
         customerId: account.customerId,
-        campaigns: transformedCampaigns,
-        totalCampaigns: transformedCampaigns.length,
+        campaigns: results.map((row: any) => ({
+          externalId: row.campaign.id.toString(),
+          name: row.campaign.name,
+          status: mapStatus(row.campaign.status),
+          platform: 'GOOGLE_ADS',
+          channelType: row.campaign.advertising_channel_type,
+          metrics: {
+            clicks: row.metrics?.clicks || 0,
+            impressions: row.metrics?.impressions || 0,
+            cost: (row.metrics?.cost_micros || 0) / 1000000, // Convert micros to dollars
+            conversions: row.metrics?.conversions || 0,
+            ctr: row.metrics?.ctr || 0,
+          },
+        })),
+        totalCampaigns: results.length,
       };
-    } catch (error: any) {
-      // Better error logging
-      let errorMessage = 'Unknown error';
-      let errorCode = null;
-      
-      if (error) {
-        // Handle different error types
-        if (typeof error === 'string') {
-          errorMessage = error;
-        } else if (error.message) {
-          errorMessage = error.message;
-        } else if (error.toString && error.toString() !== '[object Object]') {
-          errorMessage = error.toString();
-        }
-        
-        errorCode = error.code || error.status || null;
-        
-        // Handle specific Google Ads API errors
-        if (errorMessage === 'invalid_grant') {
-          errorMessage = 'Token expired or invalid. Please reconnect your Google Ads account.';
-          this.logger.warn(`Token expired for account ${accountId}. User needs to reconnect.`);
-        } else if (errorMessage.includes('permission') || errorMessage.includes('access')) {
-          errorMessage = 'Permission denied. Please check account access permissions.';
-        } else if (errorMessage.includes('developer_token')) {
-          errorMessage = 'Invalid developer token. Please check GOOGLE_ADS_DEVELOPER_TOKEN.';
-        } else if (errorMessage.includes('customer_id')) {
-          errorMessage = 'Invalid customer ID. Please check customer ID format.';
-        }
-      }
-      
-      const errorDetails = {
-        message: errorMessage,
-        code: errorCode,
-        name: error?.name,
-        accountId: accountId,
-        customerId: account?.customerId,
-      };
-      
-      this.logger.error(`Error fetching campaigns: ${errorMessage}`);
-      this.logger.error(`Error details: ${JSON.stringify(errorDetails, null, 2)}`);
-      
-      if (error?.stack) {
-        this.logger.error(`Stack trace: ${error.stack}`);
-      }
-      
-      // Throw more descriptive error
-      const descriptiveError = new Error(`Failed to fetch campaigns: ${errorMessage}`);
-      (descriptiveError as any).code = errorCode;
-      (descriptiveError as any).originalError = error;
-      throw descriptiveError;
+    } catch (error) {
+      console.error('Google Ads API Error:', error);
+      throw new Error(`Failed to fetch campaigns: ${error.message}`);
     }
   }
 
   /**
    * Sync campaigns to database
    */
+  /**
+   * Sync campaigns to database
+   */
   async syncCampaigns(accountId: string) {
-    this.logger.log(`Syncing campaigns for account: ${accountId}`);
-
-    // Fetch campaigns from Google Ads
+    // 1. Fetch campaigns from Google Ads
     const result = await this.fetchCampaigns(accountId);
+    const campaigns = result.campaigns;
 
-    // Get account
+    // 2. Get Google Ads account
     const account = await this.prisma.googleAdsAccount.findUnique({
       where: { id: accountId },
     });
 
-    let syncedCount = 0;
-    let updatedCount = 0;
-    let createdCount = 0;
+    if (!account) {
+      throw new Error('Google Ads account not found');
+    }
 
-    // Sync each campaign
-    for (const campaign of result.campaigns) {
-      try {
-        // Check if campaign exists
-        const existing = await this.prisma.campaign.findFirst({
-          where: {
-            externalId: campaign.externalId,
+    // 3. Sync to database
+    const syncedCampaigns = [];
+
+    for (const campaign of campaigns) {
+      // Check if campaign already exists
+      const existing = await this.prisma.campaign.findFirst({
+        where: {
+          externalId: campaign.externalId,
+          platform: 'GOOGLE_ADS',
+        },
+      });
+
+      if (existing) {
+        // Update existing campaign
+        const updated = await this.prisma.campaign.update({
+          where: { id: existing.id },
+          data: {
+            name: campaign.name,
+            status: campaign.status,
+            // Update metrics if needed
           },
         });
-
-        if (existing) {
-          // Update existing campaign
-          await this.prisma.campaign.update({
-            where: { id: existing.id },
-            data: {
-              name: campaign.name,
-              status: campaign.status,
-              budget: campaign.metrics.cost,
-              lastSyncedAt: new Date(),
-              syncStatus: 'SUCCESS',
+        syncedCampaigns.push(updated);
+      } else {
+        // Create new campaign
+        const created = await this.prisma.campaign.create({
+          data: {
+            name: campaign.name,
+            platform: 'GOOGLE_ADS',
+            status: campaign.status,
+            externalId: campaign.externalId,
+            googleAdsAccountId: accountId,
+            tenant: {
+              connect: { id: account.tenantId },
             },
-          });
-          updatedCount++;
-        } else {
-          // Create new campaign
-          await this.prisma.campaign.create({
-            data: {
-              name: campaign.name,
-              platform: 'GOOGLE_ADS',
-              status: campaign.status,
-              budget: campaign.metrics.cost,
-              externalId: campaign.externalId,
-              googleAdsAccountId: accountId,
-              lastSyncedAt: new Date(),
-              syncStatus: 'SUCCESS',
-              tenant: {
-                connect: { id: account.tenantId },
-              },
-            },
-          });
-          createdCount++;
-        }
-
-        syncedCount++;
-      } catch (error) {
-        this.logger.error(
-          `Error syncing campaign ${campaign.externalId}: ${error.message}`,
-        );
+            // Add metrics if needed
+          },
+        });
+        syncedCampaigns.push(created);
       }
     }
 
-    // Update account last synced time
-    await this.prisma.googleAdsAccount.update({
-      where: { id: accountId },
-      data: { lastSyncAt: new Date() },
-    });
-
-    this.logger.log(
-      `Sync completed: ${syncedCount} total, ${createdCount} created, ${updatedCount} updated`,
-    );
-
     return {
-      success: true,
-      accountId,
-      totalCampaigns: result.totalCampaigns,
-      syncedCount,
-      createdCount,
-      updatedCount,
-      lastSyncedAt: new Date(),
+      synced: syncedCampaigns.length,
+      campaigns: syncedCampaigns,
     };
   }
 
@@ -326,7 +259,7 @@ export class GoogleAdsCampaignService {
     endDate: Date,
   ) {
     this.logger.log(
-      `Fetching metrics for campaign ${campaignId} from ${startDate.toISOString()} to ${endDate.toISOString()}`,
+      `Fetching metrics for campaign ${campaignId} from ${startDate.toISOString()} to ${endDate.toISOString()} `,
     );
 
     // Get account from database
@@ -335,7 +268,7 @@ export class GoogleAdsCampaignService {
     });
 
     if (!account) {
-      throw new NotFoundException(`Google Ads account not found: ${accountId}`);
+      throw new NotFoundException(`Google Ads account not found: ${accountId} `);
     }
 
     if (!account.refreshToken) {
@@ -366,21 +299,21 @@ export class GoogleAdsCampaignService {
 
       // Query metrics with date segments
       const metrics = await customer.query(`
-        SELECT
-          campaign.id,
-          campaign.name,
-          segments.date,
-          metrics.impressions,
-          metrics.clicks,
-          metrics.cost_micros,
-          metrics.conversions,
-          metrics.conversions_value,
-          metrics.ctr,
-          metrics.average_cpc,
-          metrics.cpm
+    SELECT
+    campaign.id,
+      campaign.name,
+      segments.date,
+      metrics.impressions,
+      metrics.clicks,
+      metrics.cost_micros,
+      metrics.conversions,
+      metrics.conversions_value,
+      metrics.ctr,
+      metrics.average_cpc,
+      metrics.cpm
         FROM campaign
-        WHERE 
-          campaign.id = ${campaignId}
+    WHERE
+    campaign.id = ${campaignId}
           AND campaign.status != 'REMOVED'
           AND segments.date >= '${startDateStr}'
           AND segments.date <= '${endDateStr}'
@@ -407,7 +340,7 @@ export class GoogleAdsCampaignService {
       // Better error logging
       let errorMessage = 'Unknown error';
       let errorCode = null;
-      
+
       if (error) {
         if (typeof error === 'string') {
           errorMessage = error;
@@ -416,13 +349,13 @@ export class GoogleAdsCampaignService {
         } else if (error.toString && error.toString() !== '[object Object]') {
           errorMessage = error.toString();
         }
-        
+
         errorCode = error.code || error.status || null;
-        
+
         // Handle specific Google Ads API errors
         if (errorMessage === 'invalid_grant') {
           errorMessage = 'Token expired or invalid. Please reconnect your Google Ads account.';
-          this.logger.warn(`Token expired for account ${accountId}. User needs to reconnect.`);
+          this.logger.warn(`Token expired for account ${accountId}.User needs to reconnect.`);
         } else if (errorMessage.includes('permission') || errorMessage.includes('access')) {
           errorMessage = 'Permission denied. Please check account access permissions.';
         } else if (errorMessage.includes('developer_token')) {
@@ -431,7 +364,7 @@ export class GoogleAdsCampaignService {
           errorMessage = 'Invalid customer ID. Please check customer ID format.';
         }
       }
-      
+
       const errorDetails = {
         message: errorMessage,
         code: errorCode,
@@ -439,16 +372,16 @@ export class GoogleAdsCampaignService {
         accountId: accountId,
         campaignId: campaignId,
       };
-      
-      this.logger.error(`Error fetching metrics: ${errorMessage}`);
-      this.logger.error(`Error details: ${JSON.stringify(errorDetails, null, 2)}`);
-      
+
+      this.logger.error(`Error fetching metrics: ${errorMessage} `);
+      this.logger.error(`Error details: ${JSON.stringify(errorDetails, null, 2)} `);
+
       if (error?.stack) {
-        this.logger.error(`Stack trace: ${error.stack}`);
+        this.logger.error(`Stack trace: ${error.stack} `);
       }
-      
+
       // Throw more descriptive error
-      const descriptiveError = new Error(`Failed to fetch metrics: ${errorMessage}`);
+      const descriptiveError = new Error(`Failed to fetch metrics: ${errorMessage} `);
       (descriptiveError as any).code = errorCode;
       (descriptiveError as any).originalError = error;
       throw descriptiveError;
@@ -465,7 +398,7 @@ export class GoogleAdsCampaignService {
     days: number = 30,
   ) {
     this.logger.log(
-      `Syncing metrics for campaign ${campaignId} (last ${days} days)`,
+      `Syncing metrics for campaign ${campaignId}(last ${days} days)`,
     );
 
     // Get campaign from database
@@ -483,7 +416,7 @@ export class GoogleAdsCampaignService {
     }
 
     if (!campaign.externalId) {
-      throw new Error(`Campaign ${campaignId} has no externalId (Google Ads ID)`);
+      throw new Error(`Campaign ${campaignId} has no externalId(Google Ads ID)`);
     }
 
     // Calculate date range
@@ -552,7 +485,7 @@ export class GoogleAdsCampaignService {
         syncedCount++;
       } catch (error) {
         this.logger.error(
-          `Error syncing metric for date ${metric.date.toISOString()}: ${error.message}`,
+          `Error syncing metric for date ${metric.date.toISOString()}: ${error.message} `,
         );
       }
     }
@@ -586,7 +519,7 @@ export class GoogleAdsCampaignService {
    * Sync metrics for all campaigns in an account
    */
   async syncAllCampaignMetrics(accountId: string, days: number = 30) {
-    this.logger.log(`Syncing metrics for all campaigns in account ${accountId}`);
+    this.logger.log(`Syncing metrics for all campaigns in account ${accountId} `);
 
     // Get account
     const account = await this.prisma.googleAdsAccount.findUnique({
@@ -594,7 +527,7 @@ export class GoogleAdsCampaignService {
     });
 
     if (!account) {
-      throw new NotFoundException(`Google Ads account not found: ${accountId}`);
+      throw new NotFoundException(`Google Ads account not found: ${accountId} `);
     }
 
     // Get all campaigns for this account
@@ -623,7 +556,7 @@ export class GoogleAdsCampaignService {
         successCount++;
       } catch (error) {
         this.logger.error(
-          `Error syncing metrics for campaign ${campaign.id}: ${error.message}`,
+          `Error syncing metrics for campaign ${campaign.id}: ${error.message} `,
         );
         results.push({
           success: false,

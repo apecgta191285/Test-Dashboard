@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Param, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Param, Query, UseGuards, Request } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation, ApiParam, ApiQuery } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { GoogleAdsCampaignService } from './google-ads-campaign.service';
@@ -9,7 +9,7 @@ import { GoogleAdsCampaignService } from './google-ads-campaign.service';
 export class GoogleAdsCampaignController {
   constructor(
     private readonly campaignService: GoogleAdsCampaignService,
-  ) {}
+  ) { }
 
   @Get('accounts')
   @UseGuards(JwtAuthGuard)
@@ -30,7 +30,7 @@ export class GoogleAdsCampaignController {
   @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: 'Sync campaigns from Google Ads to database' })
   @ApiParam({ name: 'accountId', description: 'Google Ads Account ID' })
-  async syncCampaigns(@Param('accountId') accountId: string) {
+  async syncCampaigns(@Param('accountId') accountId: string, @Request() req) {
     return this.campaignService.syncCampaigns(accountId);
   }
 

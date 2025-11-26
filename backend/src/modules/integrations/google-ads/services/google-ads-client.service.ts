@@ -1,62 +1,32 @@
-﻿import { Injectable, Logger } from '@nestjs/common';
-import { GoogleAdsConfig, GoogleAdsCampaign, GoogleAdsMetrics } from '../interfaces/google-ads-config.interface';
+﻿import { Injectable } from '@nestjs/common';
+import { GoogleAdsApi, Customer } from 'google-ads-api';
+import { ConfigService } from '@nestjs/config';
 
 @Injectable()
 export class GoogleAdsClientService {
-  private readonly logger = new Logger(GoogleAdsClientService.name);
+  private client: GoogleAdsApi;
 
-  async getCampaigns(config: GoogleAdsConfig): Promise<GoogleAdsCampaign[]> {
-    // Simulate API call - In production, use google-ads-api library
-    this.logger.log('Fetching campaigns from Google Ads API');
-    
-    // Mock data for demonstration
-    return [
-      {
-        id: 'camp_001',
-        name: 'Summer Sale 2024',
-        status: 'ACTIVE',
-        budget: 5000,
-        startDate: '2024-06-01',
-        endDate: '2024-08-31',
-      },
-      {
-        id: 'camp_002',
-        name: 'Brand Awareness',
-        status: 'ACTIVE',
-        budget: 3000,
-        startDate: '2024-01-01',
-      },
-    ];
+  constructor(private configService: ConfigService) {
+    this.client = new GoogleAdsApi({
+      client_id: this.configService.get('GOOGLE_ADS_CLIENT_ID'),
+      client_secret: this.configService.get('GOOGLE_ADS_CLIENT_SECRET'),
+      developer_token: this.configService.get('GOOGLE_ADS_DEVELOPER_TOKEN'),
+    });
   }
 
-  async getCampaignMetrics(
-    config: GoogleAdsConfig,
-    campaignId: string,
-    startDate: string,
-    endDate: string,
-  ): Promise<GoogleAdsMetrics> {
-    // Simulate API call
-    this.logger.log(`Fetching metrics for campaign ${campaignId}`);
+  /**
+   * Get Google Ads Customer instance
+   * @param customerId - Customer ID (e.g., "5892016442")
+   * @param refreshToken - OAuth refresh token
+   * @returns Customer instance for querying
+   */
+  getCustomer(customerId: string, refreshToken: string): Customer {
+    const loginCustomerId = this.configService.get('GOOGLE_ADS_LOGIN_CUSTOMER_ID');
     
-    // Mock data
-    return {
-      impressions: 150000,
-      clicks: 5000,
-      cost: 2500,
-      conversions: 250,
-      conversionValue: 12500,
-    };
-  }
-
-  async testConnection(config: GoogleAdsConfig): Promise<boolean> {
-    try {
-      this.logger.log('Testing Google Ads API connection');
-      // In production, make actual API call to verify credentials
-      return true;
-    } catch (error) {
-      this.logger.error('Connection test failed', error);
-      return false;
-    }
+    return this.client.Customer({
+      customer_id: customerId,
+      refresh_token: refreshToken,
+      login_customer_id: loginCustomerId, // 🔑 สำคัญมาก! MCC Manager ID
+    });
   }
 }
-

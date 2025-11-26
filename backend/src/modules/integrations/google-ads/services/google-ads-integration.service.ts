@@ -10,7 +10,7 @@ export class GoogleAdsIntegrationService {
     private readonly prisma: PrismaService,
     private readonly authService: GoogleAdsAuthService,
     private readonly clientService: GoogleAdsClientService,
-  ) {}
+  ) { }
 
   async connect(tenantId: string, dto: ConnectGoogleAdsDto) {
     // Save API connection
@@ -30,13 +30,19 @@ export class GoogleAdsIntegrationService {
     });
 
     // Test connection
-    const isValid = await this.clientService.testConnection({
-      clientId: dto.clientId,
-      clientSecret: dto.clientSecret,
-      developerToken: dto.developerToken,
-      refreshToken: dto.refreshToken,
-      customerId: dto.customerId,
-    });
+    let isValid = false;
+    try {
+      const customer = this.clientService.getCustomer(
+        dto.customerId,
+        dto.refreshToken,
+      );
+      // Simple query to verify access
+      await customer.query('SELECT customer.id FROM customer LIMIT 1');
+      isValid = true;
+    } catch (error) {
+      console.error('Connection test failed:', error);
+      isValid = false;
+    }
 
     if (!isValid) {
       await this.prisma.aPIConnection.update({
@@ -67,71 +73,89 @@ export class GoogleAdsIntegrationService {
 
     const credentials = JSON.parse(connection.credentials);
 
-    // Fetch campaigns from Google Ads
-    const campaigns = await this.clientService.getCampaigns({
-      clientId: credentials.clientId,
-      clientSecret: credentials.clientSecret,
-      developerToken: credentials.developerToken,
-      refreshToken: credentials.refreshToken,
-      customerId: dto.customerId || credentials.customerId,
-    });
+    // Fetch campaigns and metrics from Google Ads using GAQL
+    const customer = this.clientService.getCustomer(
+      credentials.customerId,
+      credentials.refreshToken,
+    );
+
+    const startDateStr = new Date(dto.startDate).toISOString().split('T')[0];
+    const endDateStr = new Date(dto.endDate).toISOString().split('T')[0];
+
+    const query = `
+      SELECT
+        campaign.id,
+        campaign.name,
+        campaign.status,
+        campaign.advertising_channel_type,
+        campaign.start_date,
+        campaign.end_date,
+        metrics.clicks,
+        metrics.impressions,
+        metrics.cost_micros,
+        metrics.conversions,
+        metrics.conversions_value,
+        metrics.ctr,
+        metrics.average_cpc
+      FROM campaign
+      WHERE campaign.status != 'REMOVED'
+        AND segments.date BETWEEN '${startDateStr}' AND '${endDateStr}'
+      ORDER BY campaign.id
+    `;
+
+    let rows = [];
+    try {
+      rows = await customer.query(query);
+    } catch (error) {
+      throw new Error(`Failed to fetch campaigns: ${error.message}`);
+    }
 
     // Save campaigns to database
     const savedCampaigns = [];
-    for (const campaign of campaigns) {
+    for (const row of rows) {
+      const campaign = row.campaign;
+      const metrics = row.metrics;
+
       const saved = await this.prisma.campaign.upsert({
         where: {
           tenantId_externalId: {
             tenantId,
-            externalId: campaign.id,
+            externalId: campaign.id.toString(),
           },
         },
         update: {
           name: campaign.name,
           platform: 'GOOGLE_ADS',
           status: campaign.status,
-          budget: campaign.budget,
-          startDate: new Date(campaign.startDate),
-          endDate: campaign.endDate ? new Date(campaign.endDate) : null,
+          budget: (metrics?.cost_micros || 0) / 1000000,
+          startDate: campaign.start_date ? new Date(campaign.start_date) : new Date(),
+          endDate: campaign.end_date ? new Date(campaign.end_date) : null,
         },
         create: {
           tenantId,
           name: campaign.name,
           platform: 'GOOGLE_ADS',
           status: campaign.status,
-          budget: campaign.budget,
-          startDate: new Date(campaign.startDate),
-          endDate: campaign.endDate ? new Date(campaign.endDate) : null,
-          externalId: campaign.id,
+          budget: (metrics?.cost_micros || 0) / 1000000,
+          startDate: campaign.start_date ? new Date(campaign.start_date) : new Date(),
+          endDate: campaign.end_date ? new Date(campaign.end_date) : null,
+          externalId: campaign.id.toString(),
         },
       });
 
-      // Fetch and save metrics
-      const metrics = await this.clientService.getCampaignMetrics(
-        {
-          clientId: credentials.clientId,
-          clientSecret: credentials.clientSecret,
-          developerToken: credentials.developerToken,
-          refreshToken: credentials.refreshToken,
-          customerId: dto.customerId || credentials.customerId,
-        },
-        campaign.id,
-        dto.startDate,
-        dto.endDate,
-      );
-
+      // Save metrics
       await this.prisma.metric.create({
         data: {
           campaignId: saved.id,
           date: new Date(),
-          impressions: metrics.impressions,
-          clicks: metrics.clicks,
-          spend: metrics.cost,
-          revenue: metrics.conversionValue,
-          conversions: metrics.conversions,
-          ctr: (metrics.clicks / metrics.impressions) * 100,
-          cpc: metrics.cost / metrics.clicks,
-          roas: metrics.conversionValue / metrics.cost,
+          impressions: metrics?.impressions || 0,
+          clicks: metrics?.clicks || 0,
+          spend: (metrics?.cost_micros || 0) / 1000000,
+          revenue: metrics?.conversions_value || 0,
+          conversions: metrics?.conversions || 0,
+          ctr: (metrics?.ctr || 0) * 100,
+          cpc: (metrics?.average_cpc || 0) / 1000000,
+          roas: metrics?.cost_micros > 0 ? (metrics?.conversions_value || 0) / ((metrics?.cost_micros || 0) / 1000000) : 0,
         },
       });
 
