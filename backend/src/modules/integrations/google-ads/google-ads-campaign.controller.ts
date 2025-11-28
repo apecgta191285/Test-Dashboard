@@ -14,8 +14,8 @@ export class GoogleAdsCampaignController {
   @Get('accounts')
   @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: 'Get all connected Google Ads accounts' })
-  async getAccounts() {
-    return this.campaignService.getAccounts();
+  async getAccounts(@Request() req) {
+    return this.campaignService.getAccounts(req.user.tenantId);
   }
 
   @Get(':accountId/fetch')

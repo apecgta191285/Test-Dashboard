@@ -7,7 +7,7 @@ import { GoogleAdsOAuthService } from './google-ads-oauth.service';
 @ApiTags('integrations/google-ads')
 @Controller('integrations/google-ads')
 export class GoogleAdsOAuthController {
-  constructor(private readonly googleAdsOAuthService: GoogleAdsOAuthService) {}
+  constructor(private readonly googleAdsOAuthService: GoogleAdsOAuthService) { }
 
   @Get('auth-url')
   @UseGuards(JwtAuthGuard)
@@ -50,7 +50,7 @@ export class GoogleAdsOAuthController {
 
       // Redirect to frontend with success
       return res.redirect(
-        `http://localhost:3001/integrations?success=true&account_id=${result.accountId}`,
+        `http://localhost:3001/integrations?success=true&accounts=${result.count}`,
       );
     } catch (error) {
       console.error('OAuth callback error:', error);
