@@ -1,0 +1,333 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model Tenant {
+  id                      String                   @id @default(cuid())
+  name                    String
+  settings                String?
+  createdAt               DateTime                 @default(now())
+  updatedAt               DateTime                 @updatedAt
+  apiConnections          APIConnection[]
+  campaigns               Campaign[]
+  facebookAdsAccounts     FacebookAdsAccount[]     @relation("FacebookAdsAccounts")
+  googleAdsAccounts       GoogleAdsAccount[]       @relation("GoogleAdsAccounts")
+  googleAnalyticsAccounts GoogleAnalyticsAccount[] @relation("GoogleAnalyticsAccounts")
+  lineAdsAccounts         LineAdsAccount[]         @relation("LineAdsAccounts")
+  tiktokAdsAccounts       TikTokAdsAccount[]       @relation("TikTokAdsAccounts")
+  users                   User[]
+  // Alert System
+  alertRules              AlertRule[]
+  alerts                  Alert[]
+  // Sync System
+  syncLogs                SyncLog[]
+}
+
+model User {
+  id        String    @id @default(cuid())
+  email     String    @unique
+  password  String
+  name      String?
+  role      String    @default("CLIENT")
+  isActive  Boolean   @default(true)
+  tenantId  String
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  sessions  Session[]
+  tenant    Tenant    @relation(fields: [tenantId], references: [id])
+
+  @@index([role])
+  @@index([isActive])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  userId       String
+  refreshToken String   @unique
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+  user         User     @relation(fields: [userId], references: [id])
+}
+
+model Campaign {
+  id                   String              @id @default(cuid())
+  name                 String
+  platform             String
+  status               String
+  budget               Float?
+  startDate            DateTime?
+  endDate              DateTime?
+  externalId           String?
+  googleAdsAccountId   String?
+  facebookAdsAccountId String?
+  tiktokAdsAccountId   String?
+  lineAdsAccountId     String?
+  lastSyncedAt         DateTime?
+  syncStatus           String?             @default("pending")
+  tenantId             String
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
+  lineAdsAccount       LineAdsAccount?     @relation(fields: [lineAdsAccountId], references: [id])
+  tiktokAdsAccount     TikTokAdsAccount?   @relation(fields: [tiktokAdsAccountId], references: [id])
+  facebookAdsAccount   FacebookAdsAccount? @relation(fields: [facebookAdsAccountId], references: [id])
+  googleAdsAccount     GoogleAdsAccount?   @relation(fields: [googleAdsAccountId], references: [id])
+  tenant               Tenant              @relation(fields: [tenantId], references: [id])
+  metrics              Metric[]
+  // Alert System
+  alerts               Alert[]
+
+  @@unique([tenantId, externalId])
+  @@index([googleAdsAccountId])
+  @@index([platform])
+  @@index([status])
+  @@index([tenantId, status])
+}
+
+model Metric {
+  id          String   @id @default(cuid())
+  campaignId  String
+  date        DateTime
+  impressions Int
+  clicks      Int
+  spend       Float
+  conversions Int
+  revenue     Float
+  ctr         Float    @default(0)
+  cpc         Float    @default(0)
+  cpm         Float    @default(0)
+  roas        Float    @default(0)
+  isMockData  Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  campaign    Campaign @relation(fields: [campaignId], references: [id])
+
+  @@unique([campaignId, date])
+  @@index([date])
+  @@index([campaignId, date])
+}
+
+model GoogleAdsAccount {
+  id             String     @id @default(cuid())
+  tenantId       String
+  customerId     String
+  accountName    String?
+  status         String     @default("ENABLED")
+  accessToken    String
+  refreshToken   String
+  tokenExpiresAt DateTime?
+  lastSyncAt     DateTime?
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+  campaigns      Campaign[]
+  tenant         Tenant     @relation("GoogleAdsAccounts", fields: [tenantId], references: [id])
+
+  @@unique([tenantId, customerId])
+  @@index([status])
+}
+
+model GoogleAnalyticsAccount {
+  id             String    @id @default(cuid())
+  tenantId       String
+  propertyId     String
+  propertyName   String?
+  accessToken    String
+  refreshToken   String
+  tokenExpiresAt DateTime?
+  status         String    @default("ACTIVE")
+  lastSyncAt     DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  tenant         Tenant    @relation("GoogleAnalyticsAccounts", fields: [tenantId], references: [id])
+
+  @@unique([tenantId, propertyId])
+}
+
+model FacebookAdsAccount {
+  id             String     @id @default(cuid())
+  tenantId       String
+  accountId      String
+  accountName    String?
+  accessToken    String
+  tokenExpiresAt DateTime?
+  status         String     @default("ACTIVE")
+  lastSyncAt     DateTime?
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+  campaigns      Campaign[]
+  tenant         Tenant     @relation("FacebookAdsAccounts", fields: [tenantId], references: [id])
+
+  @@unique([tenantId, accountId])
+  @@index([status])
+}
+
+model APIConnection {
+  id          String    @id @default(cuid())
+  tenantId    String
+  platform    String
+  credentials String
+  isActive    Boolean   @default(true)
+  lastSyncAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  tenant      Tenant    @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, platform])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  action    String
+  resource  String
+  details   String?
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
+}
+
+
+model WebAnalyticsDaily {
+  id                 String   @id @default(cuid())
+  tenantId           String
+  propertyId         String
+  date               DateTime
+  activeUsers        Int      @default(0)
+  newUsers           Int      @default(0)
+  sessions           Int      @default(0)
+  screenPageViews    Int      @default(0)
+  engagementRate     Float    @default(0)
+  bounceRate         Float    @default(0)
+  avgSessionDuration Float    @default(0)
+  isMockData         Boolean  @default(false)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@unique([tenantId, propertyId, date])
+  @@index([tenantId])
+  @@index([date])
+  @@index([propertyId])
+}
+
+model TikTokAdsAccount {
+  id             String     @id @default(cuid())
+  tenantId       String
+  advertiserId   String
+  accountName    String?
+  accessToken    String
+  refreshToken   String?
+  tokenExpiresAt DateTime?
+  status         String     @default("ACTIVE")
+  lastSyncAt     DateTime?
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+  campaigns      Campaign[]
+  tenant         Tenant     @relation("TikTokAdsAccounts", fields: [tenantId], references: [id])
+
+  @@unique([tenantId, advertiserId])
+}
+
+model LineAdsAccount {
+  id             String     @id @default(cuid())
+  tenantId       String
+  channelId      String
+  channelName    String?
+  accessToken    String
+  tokenExpiresAt DateTime?
+  status         String     @default("ACTIVE")
+  lastSyncAt     DateTime?
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+  campaigns      Campaign[]
+  tenant         Tenant     @relation("LineAdsAccounts", fields: [tenantId], references: [id])
+
+  @@unique([tenantId, channelId])
+}
+
+// ============================================
+// Alert System Models
+// ============================================
+
+// AlertRule: เก็บเงื่อนไขที่ user กำหนด (Preset + Custom)
+model AlertRule {
+  id          String   @id @default(cuid())
+  tenantId    String
+  name        String                      // "Low ROAS Alert"
+  type        String   @default("PRESET") // PRESET | CUSTOM
+  metric      String                      // roas, spend, ctr, impressions, clicks, conversions
+  operator    String                      // gt, lt, eq, gte, lte (>, <, =, >=, <=)
+  threshold   Float                       // 1.0
+  severity    String   @default("WARNING") // INFO | WARNING | CRITICAL
+  isActive    Boolean  @default(true)
+  description String?                     // คำอธิบายเพิ่มเติม
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant      Tenant   @relation(fields: [tenantId], references: [id])
+  alerts      Alert[]
+
+  @@index([tenantId])
+  @@index([isActive])
+}
+
+// Alert: เก็บ alerts ที่เกิดขึ้น
+model Alert {
+  id          String    @id @default(cuid())
+  tenantId    String
+  ruleId      String?                     // อ้างอิง rule (ถ้ามี)
+  campaignId  String?                     // Campaign ที่เกี่ยวข้อง
+  type        String                      // LOW_ROAS, OVERSPEND, CUSTOM, etc.
+  severity    String                      // INFO | WARNING | CRITICAL
+  title       String                      // "ROAS ต่ำกว่าเกณฑ์"
+  message     String                      // "Campaign X มี ROAS 0.5"
+  metadata    String?                     // JSON: { roas: 0.5, threshold: 1.0 }
+  status      String   @default("OPEN")   // OPEN | ACKNOWLEDGED | RESOLVED
+  createdAt   DateTime @default(now())
+  resolvedAt  DateTime?
+
+  tenant      Tenant     @relation(fields: [tenantId], references: [id])
+  rule        AlertRule? @relation(fields: [ruleId], references: [id])
+  campaign    Campaign?  @relation(fields: [campaignId], references: [id])
+
+  @@index([tenantId])
+  @@index([status])
+  @@index([severity])
+  @@index([createdAt])
+}
+
+// ============================================
+// Sync Log Model
+// ============================================
+
+model SyncLog {
+  id           String    @id @default(cuid())
+  tenantId     String
+  platform     String    // GOOGLE_ADS, FACEBOOK, TIKTOK, LINE_ADS, etc.
+  accountId    String?   // Account ID ที่ sync
+  syncType     String?   // INITIAL, SCHEDULED, MANUAL
+  status       String    @default("PENDING") // PENDING, STARTED, IN_PROGRESS, SUCCESS, COMPLETED, FAILED
+  startedAt    DateTime  @default(now())
+  completedAt  DateTime?
+  errorMessage String?
+  recordsCount Int?      // จำนวน records ที่ sync
+  recordsSync  Int       @default(0)
+  createdAt    DateTime  @default(now())
+
+  tenant       Tenant    @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId])
+  @@index([platform])
+  @@index([status])
+  @@index([createdAt])
+  @@index([accountId])
+}
+
