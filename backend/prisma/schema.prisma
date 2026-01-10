@@ -8,12 +8,93 @@ datasource db {
   directUrl = env("DIRECT_URL")
 }
 
+// ============================================
+// ENUMS - Sprint 4 Type Safety
+// ============================================
+
+// User Roles: กำหนดระดับสิทธิ์การใช้งาน
+enum UserRole {
+  ADMIN // ผู้ดูแลระบบ
+  MANAGER // ผู้จัดการ (จัดการ users ในทีม)
+  CLIENT // ลูกค้าทั่วไป
+  VIEWER // ดูอย่างเดียว (read-only)
+}
+
+// Campaign Status: สถานะของแคมเปญโฆษณา
+enum CampaignStatus {
+  ACTIVE // กำลังทำงาน
+  PAUSED // หยุดชั่วคราว
+  DELETED // ถูกลบแล้ว
+  PENDING // รอดำเนินการ
+  COMPLETED // เสร็จสิ้นแล้ว
+}
+
+// Ad Platform: แพลตฟอร์มโฆษณาที่รองรับ
+enum AdPlatform {
+  GOOGLE_ADS
+  FACEBOOK
+  TIKTOK
+  LINE_ADS
+  GOOGLE_ANALYTICS
+}
+
+// Notification Channel: ช่องทางการแจ้งเตือน
+enum NotificationChannel {
+  IN_APP // แจ้งเตือนในแอป
+  EMAIL // ส่งอีเมล
+  LINE // ส่งผ่าน LINE
+  SMS // ส่ง SMS
+}
+
+// Alert Severity: ระดับความรุนแรงของ Alert
+enum AlertSeverity {
+  INFO // ข้อมูลทั่วไป
+  WARNING // เตือน
+  CRITICAL // วิกฤต
+}
+
+// Sync Status: สถานะการ Sync ข้อมูล
+enum SyncStatus {
+  PENDING // รอดำเนินการ
+  STARTED // เริ่มแล้ว
+  IN_PROGRESS // กำลังดำเนินการ
+  SUCCESS // สำเร็จ
+  COMPLETED // เสร็จสมบูรณ์
+  FAILED // ล้มเหลว
+}
+
+// Alert Status: สถานะของ Alert
+enum AlertStatus {
+  OPEN // เปิดอยู่
+  ACKNOWLEDGED // รับทราบแล้ว
+  RESOLVED // แก้ไขแล้ว
+}
+
+// Sync Type: ประเภทการ Sync
+enum SyncType {
+  INITIAL // ครั้งแรก
+  SCHEDULED // ตามกำหนด
+  MANUAL // Manual
+}
+
+// Alert Rule Type: ประเภทกฎแจ้งเตือน
+enum AlertRuleType {
+  PRESET // Preset จากระบบ
+  CUSTOM // กำหนดเอง
+}
+
+// ============================================
+// Core Models
+// ============================================
+
 model Tenant {
-  id                      String                   @id @default(cuid())
-  name                    String
-  settings                String?
-  createdAt               DateTime                 @default(now())
-  updatedAt               DateTime                 @updatedAt
+  id        String   @id @default(cuid())
+  name      String
+  settings  Json? // Changed from String to Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Existing Relations
   apiConnections          APIConnection[]
   campaigns               Campaign[]
   facebookAdsAccounts     FacebookAdsAccount[]     @relation("FacebookAdsAccounts")
@@ -22,28 +103,52 @@ model Tenant {
   lineAdsAccounts         LineAdsAccount[]         @relation("LineAdsAccounts")
   tiktokAdsAccounts       TikTokAdsAccount[]       @relation("TikTokAdsAccounts")
   users                   User[]
+
   // Alert System
-  alertRules              AlertRule[]
-  alerts                  Alert[]
+  alertRules AlertRule[]
+  alerts     Alert[]
+
   // Sync System
-  syncLogs                SyncLog[]
+  syncLogs SyncLog[]
+
+  // Sprint 4: New Relations
+  notifications  Notification[]
+  platformTokens PlatformToken[]
 }
 
 model User {
-  id        String    @id @default(cuid())
-  email     String    @unique
+  id        String   @id @default(cuid())
+  email     String   @unique
   password  String
   name      String?
-  role      String    @default("CLIENT")
-  isActive  Boolean   @default(true)
+  role      UserRole @default(CLIENT) // Changed from String to UserRole
+  isActive  Boolean  @default(true)
   tenantId  String
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  sessions  Session[]
-  tenant    Tenant    @relation(fields: [tenantId], references: [id])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // 🔐 Security Enhancement (Sprint 4)
+  lastLoginAt       DateTime? // ครั้งสุดท้ายที่ login
+  lastLoginIp       String? // IP Address ที่ login
+  failedLoginCount  Int       @default(0) // จำนวนครั้ง login ผิด
+  lockedUntil       DateTime? // ล็อค account จนถึง
+  passwordChangedAt DateTime? // ครั้งสุดท้ายเปลี่ยนรหัส
+  twoFactorEnabled  Boolean   @default(false)
+
+  // 🔔 Notification & Preferences
+  notificationPreferences Json? // { "email": true, "inApp": true }
+  timezone                String? @default("Asia/Bangkok")
+  language                String? @default("th")
+
+  // Relations
+  sessions      Session[]
+  tenant        Tenant         @relation(fields: [tenantId], references: [id])
+  notifications Notification[]
 
   @@index([role])
   @@index([isActive])
+  @@index([tenantId, isActive])
+  @@index([email])
 }
 
 model Session {
@@ -52,14 +157,16 @@ model Session {
   refreshToken String   @unique
   expiresAt    DateTime
   createdAt    DateTime @default(now())
+  ipAddress    String? // Sprint 4: Security
+  userAgent    String? // Sprint 4: Security
   user         User     @relation(fields: [userId], references: [id])
 }
 
 model Campaign {
-  id                   String              @id @default(cuid())
+  id                   String         @id @default(cuid())
   name                 String
-  platform             String
-  status               String
+  platform             AdPlatform // Changed from String to AdPlatform
+  status               CampaignStatus // Changed from String to CampaignStatus
   budget               Float?
   startDate            DateTime?
   endDate              DateTime?
@@ -69,24 +176,26 @@ model Campaign {
   tiktokAdsAccountId   String?
   lineAdsAccountId     String?
   lastSyncedAt         DateTime?
-  syncStatus           String?             @default("pending")
+  syncStatus           SyncStatus?    @default(PENDING) // Changed from String to SyncStatus
   tenantId             String
-  createdAt            DateTime            @default(now())
-  updatedAt            DateTime            @updatedAt
-  lineAdsAccount       LineAdsAccount?     @relation(fields: [lineAdsAccountId], references: [id])
-  tiktokAdsAccount     TikTokAdsAccount?   @relation(fields: [tiktokAdsAccountId], references: [id])
-  facebookAdsAccount   FacebookAdsAccount? @relation(fields: [facebookAdsAccountId], references: [id])
-  googleAdsAccount     GoogleAdsAccount?   @relation(fields: [googleAdsAccountId], references: [id])
-  tenant               Tenant              @relation(fields: [tenantId], references: [id])
-  metrics              Metric[]
-  // Alert System
-  alerts               Alert[]
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
+
+  // Relations
+  lineAdsAccount     LineAdsAccount?     @relation(fields: [lineAdsAccountId], references: [id])
+  tiktokAdsAccount   TikTokAdsAccount?   @relation(fields: [tiktokAdsAccountId], references: [id])
+  facebookAdsAccount FacebookAdsAccount? @relation(fields: [facebookAdsAccountId], references: [id])
+  googleAdsAccount   GoogleAdsAccount?   @relation(fields: [googleAdsAccountId], references: [id])
+  tenant             Tenant              @relation(fields: [tenantId], references: [id])
+  metrics            Metric[]
+  alerts             Alert[]
 
   @@unique([tenantId, externalId])
   @@index([googleAdsAccountId])
   @@index([platform])
   @@index([status])
   @@index([tenantId, status])
+  @@index([tenantId, createdAt])
 }
 
 model Metric {
@@ -111,6 +220,10 @@ model Metric {
   @@index([date])
   @@index([campaignId, date])
 }
+
+// ============================================
+// Platform Account Models
+// ============================================
 
 model GoogleAdsAccount {
   id             String     @id @default(cuid())
@@ -166,58 +279,6 @@ model FacebookAdsAccount {
   @@index([status])
 }
 
-model APIConnection {
-  id          String    @id @default(cuid())
-  tenantId    String
-  platform    String
-  credentials String
-  isActive    Boolean   @default(true)
-  lastSyncAt  DateTime?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  tenant      Tenant    @relation(fields: [tenantId], references: [id])
-
-  @@unique([tenantId, platform])
-}
-
-model AuditLog {
-  id        String   @id @default(cuid())
-  userId    String?
-  action    String
-  resource  String
-  details   String?
-  ipAddress String?
-  userAgent String?
-  createdAt DateTime @default(now())
-
-  @@index([userId])
-  @@index([action])
-  @@index([createdAt])
-}
-
-
-model WebAnalyticsDaily {
-  id                 String   @id @default(cuid())
-  tenantId           String
-  propertyId         String
-  date               DateTime
-  activeUsers        Int      @default(0)
-  newUsers           Int      @default(0)
-  sessions           Int      @default(0)
-  screenPageViews    Int      @default(0)
-  engagementRate     Float    @default(0)
-  bounceRate         Float    @default(0)
-  avgSessionDuration Float    @default(0)
-  isMockData         Boolean  @default(false)
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
-
-  @@unique([tenantId, propertyId, date])
-  @@index([tenantId])
-  @@index([date])
-  @@index([propertyId])
-}
-
 model TikTokAdsAccount {
   id             String     @id @default(cuid())
   tenantId       String
@@ -253,55 +314,197 @@ model LineAdsAccount {
   @@unique([tenantId, channelId])
 }
 
+model APIConnection {
+  id          String    @id @default(cuid())
+  tenantId    String
+  platform    String
+  credentials String
+  isActive    Boolean   @default(true)
+  lastSyncAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  tenant      Tenant    @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, platform])
+}
+
+// ============================================
+// Logging & Analytics Models
+// ============================================
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  action    String
+  resource  String
+  details   String?
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
+}
+
+model WebAnalyticsDaily {
+  id                 String   @id @default(cuid())
+  tenantId           String
+  propertyId         String
+  date               DateTime
+  activeUsers        Int      @default(0)
+  newUsers           Int      @default(0)
+  sessions           Int      @default(0)
+  screenPageViews    Int      @default(0)
+  engagementRate     Float    @default(0)
+  bounceRate         Float    @default(0)
+  avgSessionDuration Float    @default(0)
+  isMockData         Boolean  @default(false)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@unique([tenantId, propertyId, date])
+  @@index([tenantId])
+  @@index([date])
+  @@index([propertyId])
+}
+
 // ============================================
 // Alert System Models
 // ============================================
 
-// AlertRule: เก็บเงื่อนไขที่ user กำหนด (Preset + Custom)
 model AlertRule {
-  id          String   @id @default(cuid())
+  id          String        @id @default(cuid())
   tenantId    String
-  name        String                      // "Low ROAS Alert"
-  type        String   @default("PRESET") // PRESET | CUSTOM
-  metric      String                      // roas, spend, ctr, impressions, clicks, conversions
-  operator    String                      // gt, lt, eq, gte, lte (>, <, =, >=, <=)
-  threshold   Float                       // 1.0
-  severity    String   @default("WARNING") // INFO | WARNING | CRITICAL
-  isActive    Boolean  @default(true)
-  description String?                     // คำอธิบายเพิ่มเติม
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  name        String
+  type        AlertRuleType @default(PRESET) // Changed from String to AlertRuleType
+  metric      String
+  operator    String
+  threshold   Float
+  severity    AlertSeverity @default(WARNING) // Changed from String to AlertSeverity
+  isActive    Boolean       @default(true)
+  description String?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
 
-  tenant      Tenant   @relation(fields: [tenantId], references: [id])
-  alerts      Alert[]
+  tenant Tenant  @relation(fields: [tenantId], references: [id])
+  alerts Alert[]
 
   @@index([tenantId])
   @@index([isActive])
 }
 
-// Alert: เก็บ alerts ที่เกิดขึ้น
 model Alert {
-  id          String    @id @default(cuid())
-  tenantId    String
-  ruleId      String?                     // อ้างอิง rule (ถ้ามี)
-  campaignId  String?                     // Campaign ที่เกี่ยวข้อง
-  type        String                      // LOW_ROAS, OVERSPEND, CUSTOM, etc.
-  severity    String                      // INFO | WARNING | CRITICAL
-  title       String                      // "ROAS ต่ำกว่าเกณฑ์"
-  message     String                      // "Campaign X มี ROAS 0.5"
-  metadata    String?                     // JSON: { roas: 0.5, threshold: 1.0 }
-  status      String   @default("OPEN")   // OPEN | ACKNOWLEDGED | RESOLVED
-  createdAt   DateTime @default(now())
-  resolvedAt  DateTime?
+  id         String        @id @default(cuid())
+  tenantId   String
+  ruleId     String?
+  campaignId String?
+  type       String
+  severity   AlertSeverity // Changed from String to AlertSeverity
+  title      String
+  message    String
+  metadata   Json? // Changed from String to Json
+  status     AlertStatus   @default(OPEN) // Changed from String to AlertStatus
+  createdAt  DateTime      @default(now())
+  resolvedAt DateTime?
 
-  tenant      Tenant     @relation(fields: [tenantId], references: [id])
-  rule        AlertRule? @relation(fields: [ruleId], references: [id])
-  campaign    Campaign?  @relation(fields: [campaignId], references: [id])
+  tenant        Tenant         @relation(fields: [tenantId], references: [id])
+  rule          AlertRule?     @relation(fields: [ruleId], references: [id])
+  campaign      Campaign?      @relation(fields: [campaignId], references: [id])
+  notifications Notification[]
 
   @@index([tenantId])
   @@index([status])
   @@index([severity])
   @@index([createdAt])
+  @@index([tenantId, status, createdAt])
+}
+
+// ============================================
+// Notification System - Sprint 4
+// ============================================
+
+model Notification {
+  id       String @id @default(cuid())
+  tenantId String
+  userId   String
+
+  // Content
+  type    String // ALERT, REPORT_READY, SYNC_COMPLETE, SYSTEM
+  title   String
+  message String @db.Text
+
+  // Channel & Delivery
+  channel  NotificationChannel @default(IN_APP)
+  priority String              @default("NORMAL") // LOW, NORMAL, HIGH, URGENT
+
+  // Metadata for Frontend Actions (JSONB)
+  metadata Json? @db.JsonB
+  // Example: { "actionUrl": "/campaigns/123", "actionText": "View", "icon": "alert" }
+
+  // Status
+  isRead      Boolean   @default(false)
+  readAt      DateTime?
+  isDismissed Boolean   @default(false)
+
+  // References
+  alertId    String?
+  campaignId String?
+
+  // Timestamps
+  scheduledAt DateTime?
+  sentAt      DateTime?
+  createdAt   DateTime  @default(now())
+  expiresAt   DateTime?
+
+  // Relations
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  alert  Alert? @relation(fields: [alertId], references: [id], onDelete: SetNull)
+
+  @@index([userId, isRead])
+  @@index([tenantId])
+  @@index([createdAt])
+  @@index([type])
+  @@index([userId, createdAt])
+}
+
+// ============================================
+// Unified Token Management - Sprint 4
+// ============================================
+
+model PlatformToken {
+  id        String     @id @default(cuid())
+  tenantId  String
+  platform  AdPlatform
+  accountId String
+
+  // Token Storage
+  accessToken  String  @db.Text
+  refreshToken String? @db.Text
+  tokenType    String? @default("Bearer")
+  tokenScope   String?
+
+  // Lifecycle
+  expiresAt   DateTime?
+  refreshedAt DateTime?
+  lastUsedAt  DateTime?
+
+  // Health
+  isValid         Boolean @default(true)
+  errorMessage    String?
+  refreshAttempts Int     @default(0)
+
+  // Audit
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  createdBy String?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, platform, accountId])
+  @@index([platform])
+  @@index([isValid])
 }
 
 // ============================================
@@ -309,20 +512,20 @@ model Alert {
 // ============================================
 
 model SyncLog {
-  id           String    @id @default(cuid())
+  id           String     @id @default(cuid())
   tenantId     String
-  platform     String    // GOOGLE_ADS, FACEBOOK, TIKTOK, LINE_ADS, etc.
-  accountId    String?   // Account ID ที่ sync
-  syncType     String?   // INITIAL, SCHEDULED, MANUAL
-  status       String    @default("PENDING") // PENDING, STARTED, IN_PROGRESS, SUCCESS, COMPLETED, FAILED
-  startedAt    DateTime  @default(now())
+  platform     AdPlatform // Changed from String to AdPlatform
+  accountId    String?
+  syncType     SyncType? // Changed from String to SyncType
+  status       SyncStatus @default(PENDING) // Changed from String to SyncStatus
+  startedAt    DateTime   @default(now())
   completedAt  DateTime?
   errorMessage String?
-  recordsCount Int?      // จำนวน records ที่ sync
-  recordsSync  Int       @default(0)
-  createdAt    DateTime  @default(now())
+  recordsCount Int?
+  recordsSync  Int        @default(0)
+  createdAt    DateTime   @default(now())
 
-  tenant       Tenant    @relation(fields: [tenantId], references: [id])
+  tenant Tenant @relation(fields: [tenantId], references: [id])
 
   @@index([tenantId])
   @@index([platform])
@@ -330,4 +533,3 @@ model SyncLog {
   @@index([createdAt])
   @@index([accountId])
 }
-
