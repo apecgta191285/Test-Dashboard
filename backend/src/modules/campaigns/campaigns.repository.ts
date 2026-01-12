@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateCampaignDto, UpdateCampaignDto, QueryCampaignsDto } from './dto';
-import { Campaign, Metric, Prisma } from '@prisma/client';
+import { Campaign, Metric, Prisma, CampaignStatus, AdPlatform } from '@prisma/client';
 
 export abstract class CampaignsRepository {
   abstract create(tenantId: string, data: CreateCampaignDto): Promise<Campaign & { metrics: Metric[] }>;
@@ -21,7 +21,7 @@ export class PrismaCampaignsRepository implements CampaignsRepository {
       data: {
         name: dto.name,
         platform: dto.platform,
-        status: dto.status || 'DRAFT',
+        status: dto.status || CampaignStatus.PENDING,
         budget: dto.budget,
         startDate: dto.startDate ? new Date(dto.startDate) : null,
         endDate: dto.endDate ? new Date(dto.endDate) : null,
@@ -42,19 +42,21 @@ export class PrismaCampaignsRepository implements CampaignsRepository {
     const where: Prisma.CampaignWhereInput = { tenantId };
 
     if (search) {
+      // Search only string fields, not enum fields
       where.OR = [
         { name: { contains: search } },
-        { platform: { contains: search } },
         { externalId: { contains: search } },
       ];
     }
 
     if (status) {
-      where.status = status;
+      // Cast string to CampaignStatus enum
+      where.status = status as CampaignStatus;
     }
 
     if (platform) {
-      where.platform = platform;
+      // Cast string to AdPlatform enum
+      where.platform = platform as AdPlatform;
     }
 
     const take = limit;

@@ -1,31 +1,32 @@
 import { Injectable } from '@nestjs/common';
+import { CampaignStatus, AdPlatform } from '@prisma/client';
 
 @Injectable()
 export class GoogleAdsMapperService {
     /**
-     * Map Google Ads campaign status to our status
+     * Map Google Ads campaign status to our CampaignStatus enum
      */
-    mapCampaignStatus(googleStatus: number | string): string {
+    mapCampaignStatus(googleStatus: number | string): CampaignStatus {
         // If status is already a string (from some API versions or manual mapping)
         if (typeof googleStatus === 'string') {
-            const statusMap: Record<string, string> = {
-                ENABLED: 'ACTIVE',
-                PAUSED: 'PAUSED',
-                REMOVED: 'DELETED',
+            const statusMap: Record<string, CampaignStatus> = {
+                ENABLED: CampaignStatus.ACTIVE,
+                PAUSED: CampaignStatus.PAUSED,
+                REMOVED: CampaignStatus.DELETED,
             };
-            return statusMap[googleStatus] || 'PAUSED';
+            return statusMap[googleStatus] || CampaignStatus.PAUSED;
         }
 
         // Map numeric status from Google Ads API
         switch (googleStatus) {
             case 2:
-                return 'ACTIVE'; // ENABLED
+                return CampaignStatus.ACTIVE; // ENABLED
             case 3:
-                return 'PAUSED'; // PAUSED
+                return CampaignStatus.PAUSED; // PAUSED
             case 4:
-                return 'DELETED'; // REMOVED
+                return CampaignStatus.DELETED; // REMOVED
             default:
-                return 'UNKNOWN';
+                return CampaignStatus.PENDING;
         }
     }
 
@@ -37,7 +38,7 @@ export class GoogleAdsMapperService {
             externalId: row.campaign.id.toString(),
             name: row.campaign.name,
             status: this.mapCampaignStatus(row.campaign.status),
-            platform: 'GOOGLE_ADS',
+            platform: AdPlatform.GOOGLE_ADS,
             channelType: row.campaign.advertising_channel_type,
             metrics: {
                 clicks: row.metrics?.clicks || 0,

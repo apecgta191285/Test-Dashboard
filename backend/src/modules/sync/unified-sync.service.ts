@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { IntegrationFactory } from '../integrations/common/integration.factory';
-import { PlatformType } from '../../common/enums/platform-type.enum';
+import { AdPlatform } from '@prisma/client';
 import { MarketingPlatformAdapter } from '../integrations/common/marketing-platform.adapter';
 
 @Injectable()
@@ -20,11 +20,11 @@ export class UnifiedSyncService {
         this.logger.log('Starting unified sync for all platforms...');
 
         const results = {
-            [PlatformType.GOOGLE_ADS]: await this.syncPlatform(PlatformType.GOOGLE_ADS),
-            [PlatformType.FACEBOOK]: await this.syncPlatform(PlatformType.FACEBOOK),
-            [PlatformType.GOOGLE_ANALYTICS]: await this.syncPlatform(PlatformType.GOOGLE_ANALYTICS),
-            [PlatformType.TIKTOK]: await this.syncPlatform(PlatformType.TIKTOK),
-            [PlatformType.LINE_ADS]: await this.syncPlatform(PlatformType.LINE_ADS),
+            [AdPlatform.GOOGLE_ADS]: await this.syncPlatform(AdPlatform.GOOGLE_ADS),
+            [AdPlatform.FACEBOOK]: await this.syncPlatform(AdPlatform.FACEBOOK),
+            [AdPlatform.GOOGLE_ANALYTICS]: await this.syncPlatform(AdPlatform.GOOGLE_ANALYTICS),
+            [AdPlatform.TIKTOK]: await this.syncPlatform(AdPlatform.TIKTOK),
+            [AdPlatform.LINE_ADS]: await this.syncPlatform(AdPlatform.LINE_ADS),
         };
 
         this.logger.log('Unified sync completed', results);
@@ -34,26 +34,26 @@ export class UnifiedSyncService {
     /**
      * Sync all accounts for a specific platform
      */
-    async syncPlatform(platform: string) {
+    async syncPlatform(platform: AdPlatform) {
         this.logger.log(`Syncing all accounts for platform: ${platform}`);
         let accounts: any[] = [];
 
         // Fetch accounts based on platform
         // TODO: In the future, we should have a unified Account table or a polymorphic relation
         switch (platform) {
-            case PlatformType.GOOGLE_ADS:
+            case AdPlatform.GOOGLE_ADS:
                 accounts = await this.prisma.googleAdsAccount.findMany({ where: { status: 'ENABLED' } });
                 break;
-            case PlatformType.FACEBOOK:
+            case AdPlatform.FACEBOOK:
                 accounts = await this.prisma.facebookAdsAccount.findMany({ where: { status: 'ACTIVE' } });
                 break;
-            case PlatformType.GOOGLE_ANALYTICS:
+            case AdPlatform.GOOGLE_ANALYTICS:
                 accounts = await this.prisma.googleAnalyticsAccount.findMany({ where: { status: 'ACTIVE' } });
                 break;
-            case PlatformType.TIKTOK:
+            case AdPlatform.TIKTOK:
                 accounts = await this.prisma.tikTokAdsAccount.findMany({ where: { status: 'ACTIVE' } });
                 break;
-            case PlatformType.LINE_ADS:
+            case AdPlatform.LINE_ADS:
                 accounts = await this.prisma.lineAdsAccount.findMany({ where: { status: 'ACTIVE' } });
                 break;
             default:
@@ -80,12 +80,10 @@ export class UnifiedSyncService {
     /**
      * Sync a specific account using the Adapter Pattern
      */
-    async syncAccount(platform: string, accountId: string, tenantId: string, accountData?: any) {
+    async syncAccount(platform: AdPlatform, accountId: string, tenantId: string, accountData?: any) {
         const adapter = this.integrationFactory.getAdapter(platform);
 
         // 1. Prepare Credentials
-        // Note: Each platform model has slightly different field names, we need to normalize them
-        // or fetch them if not provided.
         if (!accountData) {
             accountData = await this.fetchAccountData(platform, accountId);
         }
@@ -93,11 +91,10 @@ export class UnifiedSyncService {
         const credentials = {
             accessToken: accountData.accessToken,
             refreshToken: accountData.refreshToken,
-            accountId: platform === PlatformType.GOOGLE_ANALYTICS ? accountData.propertyId : (accountData.customerId || accountData.accountId),
+            accountId: platform === AdPlatform.GOOGLE_ANALYTICS ? accountData.propertyId : (accountData.customerId || accountData.accountId),
         };
 
         // 2. Fetch Campaigns (if applicable)
-        // GA4 returns empty array here as per our adapter implementation
         const campaigns = await adapter.fetchCampaigns(credentials);
 
         // 3. Save Campaigns to DB
@@ -106,12 +103,8 @@ export class UnifiedSyncService {
         }
 
         // 4. Fetch & Save Metrics
-        // For Ads: Loop through campaigns and fetch metrics
-        // For GA4: Fetch account-level metrics (treated as a "campaign" or just direct metrics)
-
-        if (platform === PlatformType.GOOGLE_ANALYTICS) {
+        if (platform === AdPlatform.GOOGLE_ANALYTICS) {
             // GA4 Logic: Fetch Account Level Metrics
-            // We treat the "Property" as the entity to fetch metrics for
             const dateRange = {
                 startDate: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000), // Last 30 days
                 endDate: new Date(),
@@ -122,14 +115,10 @@ export class UnifiedSyncService {
 
         } else {
             // Ads Logic: Fetch Campaign Level Metrics
-            // We need to re-fetch campaigns from DB to get the internal ID
             const dbCampaigns = await this.prisma.campaign.findMany({
                 where: {
                     tenantId,
                     platform,
-                    // For Google Ads, we link via googleAdsAccountId
-                    // For Facebook, we link via facebookAdsAccountId
-                    // This is a bit messy due to schema design, but we handle it.
                     OR: [
                         { googleAdsAccountId: accountId },
                         { facebookAdsAccountId: accountId }
@@ -154,27 +143,26 @@ export class UnifiedSyncService {
         await this.updateLastSync(platform, accountId);
     }
 
-    private async fetchAccountData(platform: string, accountId: string) {
+    private async fetchAccountData(platform: AdPlatform, accountId: string) {
         switch (platform) {
-            case PlatformType.GOOGLE_ADS:
+            case AdPlatform.GOOGLE_ADS:
                 return this.prisma.googleAdsAccount.findUnique({ where: { id: accountId } });
-            case PlatformType.FACEBOOK:
+            case AdPlatform.FACEBOOK:
                 return this.prisma.facebookAdsAccount.findUnique({ where: { id: accountId } });
-            case PlatformType.GOOGLE_ANALYTICS:
+            case AdPlatform.GOOGLE_ANALYTICS:
                 return this.prisma.googleAnalyticsAccount.findUnique({ where: { id: accountId } });
-            case PlatformType.TIKTOK:
+            case AdPlatform.TIKTOK:
                 return this.prisma.tikTokAdsAccount.findUnique({ where: { id: accountId } });
-            case PlatformType.LINE_ADS:
+            case AdPlatform.LINE_ADS:
                 return this.prisma.lineAdsAccount.findUnique({ where: { id: accountId } });
             default:
                 throw new Error(`Unknown platform ${platform}`);
         }
     }
 
-    private async saveCampaign(tenantId: string, platform: string, accountId: string, data: any) {
+    private async saveCampaign(tenantId: string, platform: AdPlatform, accountId: string, data: any) {
         // Common logic to upsert campaign
-        // We need to handle the specific foreign key based on platform
-        const fkField = platform === PlatformType.GOOGLE_ADS ? 'googleAdsAccountId' : 'facebookAdsAccountId';
+        const fkField = platform === AdPlatform.GOOGLE_ADS ? 'googleAdsAccountId' : 'facebookAdsAccountId';
 
         // Check existence
         const existing = await this.prisma.campaign.findFirst({
@@ -250,7 +238,6 @@ export class UnifiedSyncService {
 
     private async saveWebAnalytics(tenantId: string, propertyId: string, metrics: any[]) {
         for (const m of metrics) {
-            // GA4 Adapter returns metrics in a generic format, we map them to WebAnalyticsDaily
             await this.prisma.webAnalyticsDaily.upsert({
                 where: {
                     tenantId_propertyId_date: {
@@ -260,9 +247,9 @@ export class UnifiedSyncService {
                     }
                 },
                 update: {
-                    activeUsers: m.impressions, // Mapped from Adapter
-                    sessions: m.clicks,         // Mapped from Adapter
-                    newUsers: 0, // Adapter might not return this yet, need to enhance Adapter if needed
+                    activeUsers: m.impressions,
+                    sessions: m.clicks,
+                    newUsers: 0,
                     engagementRate: 0,
                 },
                 create: {
@@ -276,16 +263,16 @@ export class UnifiedSyncService {
         }
     }
 
-    private async updateLastSync(platform: string, accountId: string) {
+    private async updateLastSync(platform: AdPlatform, accountId: string) {
         const now = new Date();
         switch (platform) {
-            case PlatformType.GOOGLE_ADS:
+            case AdPlatform.GOOGLE_ADS:
                 await this.prisma.googleAdsAccount.update({ where: { id: accountId }, data: { lastSyncAt: now } });
                 break;
-            case PlatformType.FACEBOOK:
+            case AdPlatform.FACEBOOK:
                 await this.prisma.facebookAdsAccount.update({ where: { id: accountId }, data: { lastSyncAt: now } });
                 break;
-            case PlatformType.GOOGLE_ANALYTICS:
+            case AdPlatform.GOOGLE_ANALYTICS:
                 await this.prisma.googleAnalyticsAccount.update({ where: { id: accountId }, data: { lastSyncAt: now } });
                 break;
         }

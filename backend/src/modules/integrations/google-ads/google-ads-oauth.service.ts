@@ -8,7 +8,7 @@ import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { Cache } from 'cache-manager';
 import { v4 as uuidv4 } from 'uuid';
 import { UnifiedSyncService } from '../../sync/unified-sync.service';
-import { PlatformType } from '../../../common/enums/platform-type.enum';
+import { AdPlatform } from '@prisma/client';
 import { EncryptionService } from '../../../common/services/encryption.service';
 
 @Injectable()
@@ -202,7 +202,7 @@ export class GoogleAdsOAuthService {
       const syncLog = await this.prisma.syncLog.create({
         data: {
           tenantId,
-          platform: 'GOOGLE_ADS',
+          platform: AdPlatform.GOOGLE_ADS,
           accountId,
           syncType: 'INITIAL',
           status: 'STARTED',
@@ -211,7 +211,7 @@ export class GoogleAdsOAuthService {
       });
 
       // Run sync using Unified Engine
-      await this.unifiedSyncService.syncAccount(PlatformType.GOOGLE_ADS, accountId, tenantId);
+      await this.unifiedSyncService.syncAccount(AdPlatform.GOOGLE_ADS, accountId, tenantId);
 
       // Update SyncLog
       await this.prisma.syncLog.update({

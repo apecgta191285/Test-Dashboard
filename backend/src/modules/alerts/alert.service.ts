@@ -1,64 +1,72 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { Prisma } from '@prisma/client';
+import { Prisma, AlertRuleType, AlertSeverity, AlertStatus } from '@prisma/client';
 
-// Preset Alert Rules
-const PRESET_RULES = [
-    {
-        name: 'Low ROAS',
-        type: 'PRESET',
-        metric: 'roas',
-        operator: 'lt',
-        threshold: 1.0,
-        severity: 'WARNING',
-        description: 'ROAS ต่ำกว่า 1.0 - กำลังขาดทุน',
-    },
-    {
-        name: 'Critical ROAS',
-        type: 'PRESET',
-        metric: 'roas',
-        operator: 'lt',
-        threshold: 0.5,
-        severity: 'CRITICAL',
-        description: 'ROAS ต่ำกว่า 0.5 - ขาดทุนหนัก',
-    },
-    {
-        name: 'Overspend',
-        type: 'PRESET',
-        metric: 'spend',
-        operator: 'gt',
-        threshold: 1.1, // Will multiply by budget
-        severity: 'WARNING',
-        description: 'ใช้งบเกิน 110% ของ budget',
-    },
-    {
-        name: 'No Conversions',
-        type: 'PRESET',
-        metric: 'conversions',
-        operator: 'eq',
-        threshold: 0,
-        severity: 'CRITICAL',
-        description: 'ไม่มี Conversion ใน 7 วัน',
-    },
-    {
-        name: 'CTR Drop',
-        type: 'PRESET',
-        metric: 'ctr',
-        operator: 'lt',
-        threshold: 0.7, // 70% of previous
-        severity: 'WARNING',
-        description: 'CTR ลดลง 30% จากสัปดาห์ก่อน',
-    },
-    {
-        name: 'Inactive Campaign',
-        type: 'PRESET',
-        metric: 'impressions',
-        operator: 'eq',
-        threshold: 0,
-        severity: 'INFO',
-        description: 'ไม่มี Impressions ใน 3 วัน',
-    },
-];
+// Preset Alert Rules - using Prisma enum types
+const PRESET_RULES: Array<{
+    name: string;
+    type: AlertRuleType;
+    metric: string;
+    operator: string;
+    threshold: number;
+    severity: AlertSeverity;
+    description: string;
+}> = [
+        {
+            name: 'Low ROAS',
+            type: AlertRuleType.PRESET,
+            metric: 'roas',
+            operator: 'lt',
+            threshold: 1.0,
+            severity: AlertSeverity.WARNING,
+            description: 'ROAS ต่ำกว่า 1.0 - กำลังขาดทุน',
+        },
+        {
+            name: 'Critical ROAS',
+            type: AlertRuleType.PRESET,
+            metric: 'roas',
+            operator: 'lt',
+            threshold: 0.5,
+            severity: AlertSeverity.CRITICAL,
+            description: 'ROAS ต่ำกว่า 0.5 - ขาดทุนหนัก',
+        },
+        {
+            name: 'Overspend',
+            type: AlertRuleType.PRESET,
+            metric: 'spend',
+            operator: 'gt',
+            threshold: 1.1,
+            severity: AlertSeverity.WARNING,
+            description: 'ใช้งบเกิน 110% ของ budget',
+        },
+        {
+            name: 'No Conversions',
+            type: AlertRuleType.PRESET,
+            metric: 'conversions',
+            operator: 'eq',
+            threshold: 0,
+            severity: AlertSeverity.CRITICAL,
+            description: 'ไม่มี Conversion ใน 7 วัน',
+        },
+        {
+            name: 'CTR Drop',
+            type: AlertRuleType.PRESET,
+            metric: 'ctr',
+            operator: 'lt',
+            threshold: 0.7,
+            severity: AlertSeverity.WARNING,
+            description: 'CTR ลดลง 30% จากสัปดาห์ก่อน',
+        },
+        {
+            name: 'Inactive Campaign',
+            type: AlertRuleType.PRESET,
+            metric: 'impressions',
+            operator: 'eq',
+            threshold: 0,
+            severity: AlertSeverity.INFO,
+            description: 'ไม่มี Impressions ใน 3 วัน',
+        },
+    ];
 
 @Injectable()
 export class AlertService {
@@ -70,7 +78,6 @@ export class AlertService {
     // Alert Rule Management
     // ============================================
 
-    // Get all rules for tenant
     async getRules(tenantId: string) {
         return this.prisma.alertRule.findMany({
             where: { tenantId },
@@ -78,10 +85,9 @@ export class AlertService {
         });
     }
 
-    // Create preset rules for new tenant
     async initializePresetRules(tenantId: string) {
         const existingRules = await this.prisma.alertRule.findMany({
-            where: { tenantId, type: 'PRESET' },
+            where: { tenantId, type: AlertRuleType.PRESET },
         });
 
         if (existingRules.length > 0) {
@@ -93,8 +99,14 @@ export class AlertService {
             PRESET_RULES.map((rule) =>
                 this.prisma.alertRule.create({
                     data: {
-                        ...rule,
-                        tenantId,
+                        tenant: { connect: { id: tenantId } },
+                        name: rule.name,
+                        type: rule.type,
+                        metric: rule.metric,
+                        operator: rule.operator,
+                        threshold: rule.threshold,
+                        severity: rule.severity,
+                        description: rule.description,
                     },
                 }),
             ),
@@ -104,25 +116,28 @@ export class AlertService {
         return createdRules;
     }
 
-    // Create custom rule
     async createRule(tenantId: string, data: {
         name: string;
         metric: string;
         operator: string;
         threshold: number;
-        severity?: string;
+        severity?: AlertSeverity;
         description?: string;
     }) {
         return this.prisma.alertRule.create({
             data: {
-                ...data,
-                type: 'CUSTOM',
-                tenantId,
+                tenant: { connect: { id: tenantId } },
+                name: data.name,
+                metric: data.metric,
+                operator: data.operator,
+                threshold: data.threshold,
+                type: AlertRuleType.CUSTOM,
+                severity: data.severity || AlertSeverity.WARNING,
+                description: data.description,
             },
         });
     }
 
-    // Update rule
     async updateRule(ruleId: string, tenantId: string, data: Prisma.AlertRuleUpdateInput) {
         return this.prisma.alertRule.update({
             where: { id: ruleId },
@@ -130,7 +145,6 @@ export class AlertService {
         });
     }
 
-    // Toggle rule active status
     async toggleRule(ruleId: string, tenantId: string) {
         const rule = await this.prisma.alertRule.findFirst({
             where: { id: ruleId, tenantId },
@@ -146,7 +160,6 @@ export class AlertService {
         });
     }
 
-    // Delete rule (custom only)
     async deleteRule(ruleId: string, tenantId: string) {
         const rule = await this.prisma.alertRule.findFirst({
             where: { id: ruleId, tenantId },
@@ -156,7 +169,7 @@ export class AlertService {
             throw new Error('Rule not found');
         }
 
-        if (rule.type === 'PRESET') {
+        if (rule.type === AlertRuleType.PRESET) {
             throw new Error('Cannot delete preset rules, only disable them');
         }
 
@@ -169,20 +182,19 @@ export class AlertService {
     // Alert Management
     // ============================================
 
-    // Get alerts for tenant
     async getAlerts(tenantId: string, options?: {
-        status?: string;
-        severity?: string;
+        status?: AlertStatus;
+        severity?: AlertSeverity;
         limit?: number;
     }) {
         const { status, severity, limit = 50 } = options || {};
 
+        const whereClause: Prisma.AlertWhereInput = { tenantId };
+        if (status) whereClause.status = status;
+        if (severity) whereClause.severity = severity;
+
         return this.prisma.alert.findMany({
-            where: {
-                tenantId,
-                ...(status && { status }),
-                ...(severity && { severity }),
-            },
+            where: whereClause,
             include: {
                 campaign: {
                     select: { id: true, name: true, platform: true },
@@ -196,53 +208,49 @@ export class AlertService {
         });
     }
 
-    // Get open alerts count
     async getOpenAlertsCount(tenantId: string) {
         const counts = await this.prisma.alert.groupBy({
             by: ['severity'],
             where: {
                 tenantId,
-                status: 'OPEN',
+                status: AlertStatus.OPEN,
             },
             _count: true,
         });
 
         return {
             total: counts.reduce((sum, c) => sum + c._count, 0),
-            critical: counts.find((c) => c.severity === 'CRITICAL')?._count || 0,
-            warning: counts.find((c) => c.severity === 'WARNING')?._count || 0,
-            info: counts.find((c) => c.severity === 'INFO')?._count || 0,
+            critical: counts.find((c) => c.severity === AlertSeverity.CRITICAL)?._count || 0,
+            warning: counts.find((c) => c.severity === AlertSeverity.WARNING)?._count || 0,
+            info: counts.find((c) => c.severity === AlertSeverity.INFO)?._count || 0,
         };
     }
 
-    // Acknowledge alert
     async acknowledgeAlert(alertId: string, tenantId: string) {
         return this.prisma.alert.update({
             where: { id: alertId },
-            data: { status: 'ACKNOWLEDGED' },
+            data: { status: AlertStatus.ACKNOWLEDGED },
         });
     }
 
-    // Resolve alert
     async resolveAlert(alertId: string, tenantId: string) {
         return this.prisma.alert.update({
             where: { id: alertId },
             data: {
-                status: 'RESOLVED',
+                status: AlertStatus.RESOLVED,
                 resolvedAt: new Date(),
             },
         });
     }
 
-    // Resolve all alerts
     async resolveAllAlerts(tenantId: string) {
         return this.prisma.alert.updateMany({
             where: {
                 tenantId,
-                status: { not: 'RESOLVED' },
+                status: { not: AlertStatus.RESOLVED },
             },
             data: {
-                status: 'RESOLVED',
+                status: AlertStatus.RESOLVED,
                 resolvedAt: new Date(),
             },
         });
@@ -252,11 +260,9 @@ export class AlertService {
     // Alert Checking (Batch / On-Demand)
     // ============================================
 
-    // Check all alerts for tenant
     async checkAlerts(tenantId: string) {
         this.logger.log(`Checking alerts for tenant ${tenantId}`);
 
-        // Get active rules
         const rules = await this.prisma.alertRule.findMany({
             where: { tenantId, isActive: true },
         });
@@ -266,7 +272,6 @@ export class AlertService {
             return [];
         }
 
-        // Get recent metrics (last 7 days)
         const sevenDaysAgo = new Date();
         sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
 
@@ -284,38 +289,36 @@ export class AlertService {
         for (const campaign of campaigns) {
             if (campaign.metrics.length === 0) continue;
 
-            // Aggregate metrics
             const aggregated = this.aggregateMetrics(campaign.metrics);
 
             for (const rule of rules) {
                 const violated = this.checkRule(rule, aggregated, campaign.budget);
 
                 if (violated) {
-                    // Check if similar alert already exists and is open
                     const existingAlert = await this.prisma.alert.findFirst({
                         where: {
                             tenantId,
                             campaignId: campaign.id,
                             type: rule.name.toUpperCase().replace(/ /g, '_'),
-                            status: { not: 'RESOLVED' },
+                            status: { not: AlertStatus.RESOLVED },
                         },
                     });
 
                     if (!existingAlert) {
                         const alert = await this.prisma.alert.create({
                             data: {
-                                tenantId,
-                                ruleId: rule.id,
-                                campaignId: campaign.id,
+                                tenant: { connect: { id: tenantId } },
+                                rule: { connect: { id: rule.id } },
+                                campaign: { connect: { id: campaign.id } },
                                 type: rule.name.toUpperCase().replace(/ /g, '_'),
                                 severity: rule.severity,
                                 title: `${rule.name}: ${campaign.name}`,
                                 message: this.generateAlertMessage(rule, aggregated, campaign.name),
-                                metadata: JSON.stringify({
+                                metadata: {
                                     metric: rule.metric,
                                     value: aggregated[rule.metric],
                                     threshold: rule.threshold,
-                                }),
+                                },
                             },
                         });
                         newAlerts.push(alert);
@@ -328,7 +331,6 @@ export class AlertService {
         return newAlerts;
     }
 
-    // Helper: Aggregate metrics
     private aggregateMetrics(metrics: any[]) {
         const totals = metrics.reduce(
             (acc, m) => ({
@@ -349,12 +351,10 @@ export class AlertService {
         };
     }
 
-    // Helper: Check if rule is violated
     private checkRule(rule: any, metrics: any, budget?: number | null) {
         const value = metrics[rule.metric];
         let threshold = rule.threshold;
 
-        // Special handling for overspend
         if (rule.name === 'Overspend' && budget) {
             threshold = budget * rule.threshold;
         }
@@ -375,7 +375,6 @@ export class AlertService {
         }
     }
 
-    // Helper: Generate alert message
     private generateAlertMessage(rule: any, metrics: any, campaignName: string) {
         const value = metrics[rule.metric];
         const formatted = typeof value === 'number' ? value.toFixed(2) : value;

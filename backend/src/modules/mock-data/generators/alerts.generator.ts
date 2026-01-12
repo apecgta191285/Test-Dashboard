@@ -3,7 +3,9 @@
  * สร้าง mock alerts สำหรับทดสอบ Alert System
  */
 
-export type AlertSeverity = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+import { AlertSeverity, AlertStatus, AdPlatform } from '@prisma/client';
+
+// Keep the AlertType as a string union for backwards compatibility
 export type AlertType =
     | 'LOW_ROAS'
     | 'CRITICAL_ROAS'
@@ -17,7 +19,7 @@ interface MockAlert {
     severity: AlertSeverity;
     message: string;
     campaignName: string;
-    platform: string;
+    platform: AdPlatform;
     value: number;
     threshold: number;
     isRead: boolean;
@@ -29,80 +31,80 @@ interface MockAlert {
 export const MOCK_ALERT_TEMPLATES: MockAlert[] = [
     {
         type: 'CRITICAL_ROAS',
-        severity: 'CRITICAL',
+        severity: AlertSeverity.CRITICAL,
         message: 'แคมเปญ {campaignName} มี ROAS วิกฤต ({value}) ต่ำกว่าเกณฑ์ ({threshold})',
         campaignName: 'Google Search - Brand Keywords',
-        platform: 'GOOGLE_ADS',
+        platform: AdPlatform.GOOGLE_ADS,
         value: 0.3,
         threshold: 1.0,
         isRead: false,
     },
     {
         type: 'LOW_ROAS',
-        severity: 'HIGH',
+        severity: AlertSeverity.WARNING,
         message: 'แคมเปญ {campaignName} มี ROAS ต่ำ ({value}) ต่ำกว่าเกณฑ์ ({threshold})',
         campaignName: 'Facebook Lead Gen',
-        platform: 'FACEBOOK',
+        platform: AdPlatform.FACEBOOK,
         value: 0.8,
         threshold: 1.5,
         isRead: false,
     },
     {
         type: 'OVERSPEND',
-        severity: 'HIGH',
+        severity: AlertSeverity.WARNING,
         message: 'แคมเปญ {campaignName} ใช้งบเกิน {value}% ของงบที่ตั้งไว้',
         campaignName: 'TikTok Awareness',
-        platform: 'TIKTOK',
+        platform: AdPlatform.TIKTOK,
         value: 125,
         threshold: 100,
         isRead: false,
     },
     {
         type: 'NO_CONVERSIONS',
-        severity: 'MEDIUM',
+        severity: AlertSeverity.INFO,
         message: 'แคมเปญ {campaignName} ไม่มี conversion มา {value} วันแล้ว',
         campaignName: 'LINE Shopping Promo',
-        platform: 'LINE_ADS',
+        platform: AdPlatform.LINE_ADS,
         value: 7,
         threshold: 3,
         isRead: true,
     },
     {
         type: 'CTR_DROP',
-        severity: 'MEDIUM',
+        severity: AlertSeverity.WARNING,
         message: 'CTR ของ {campaignName} ลดลง {value}% จากสัปดาห์ก่อน',
         campaignName: 'Display Remarketing',
-        platform: 'GOOGLE_ADS',
+        platform: AdPlatform.GOOGLE_ADS,
         value: 45,
         threshold: 20,
         isRead: false,
     },
     {
         type: 'INACTIVE_CAMPAIGN',
-        severity: 'LOW',
+        severity: AlertSeverity.INFO,
         message: 'แคมเปญ {campaignName} ไม่มี activity มา {value} วัน',
         campaignName: 'FB Video Views',
-        platform: 'FACEBOOK',
+        platform: AdPlatform.FACEBOOK,
         value: 14,
         threshold: 7,
         isRead: true,
     },
     {
         type: 'LOW_ROAS',
-        severity: 'HIGH',
+        severity: AlertSeverity.WARNING,
         message: 'แคมเปญ {campaignName} มี ROAS ต่ำ ({value})',
         campaignName: 'Google Shopping',
-        platform: 'GOOGLE_ADS',
+        platform: AdPlatform.GOOGLE_ADS,
         value: 0.9,
         threshold: 1.5,
         isRead: false,
     },
     {
         type: 'OVERSPEND',
-        severity: 'CRITICAL',
+        severity: AlertSeverity.CRITICAL,
         message: 'แคมเปญ {campaignName} ใช้งบเกิน {value}% - หยุดอัตโนมัติแล้ว',
         campaignName: 'Brand Awareness Campaign',
-        platform: 'FACEBOOK',
+        platform: AdPlatform.FACEBOOK,
         value: 150,
         threshold: 100,
         isRead: false,
@@ -141,15 +143,15 @@ export function generateAlertForDB(tenantId: string, ruleId: string, template: M
         tenantId,
         ruleId,
         type: template.type,
-        severity: template.severity === 'LOW' ? 'INFO' : template.severity === 'MEDIUM' ? 'WARNING' : 'CRITICAL',
+        severity: template.severity,
         title: `Mock Alert - ${template.type}`,
         message,
-        metadata: JSON.stringify({
+        metadata: {
             campaignName: template.campaignName,
             platform: template.platform,
             value: template.value,
             threshold: template.threshold,
-        }),
-        status: template.isRead ? 'ACKNOWLEDGED' : 'OPEN',
+        },
+        status: template.isRead ? AlertStatus.ACKNOWLEDGED : AlertStatus.OPEN,
     };
 }

@@ -9,7 +9,7 @@ import {
     DateRange
 } from '../common/marketing-platform.adapter';
 import { firstValueFrom } from 'rxjs';
-import { Campaign, Metric } from '@prisma/client';
+import { Campaign, Metric, CampaignStatus, AdPlatform } from '@prisma/client';
 import { FacebookCampaignResponse, FacebookInsightsResponse } from './interfaces/facebook-api.types';
 
 @Injectable()
@@ -66,8 +66,8 @@ export class FacebookAdsService implements MarketingPlatformAdapter {
             return data.data.map((c) => ({
                 externalId: c.id,
                 name: c.name,
-                status: c.status,
-                platform: 'FACEBOOK',
+                status: this.mapStatus(c.status),
+                platform: AdPlatform.FACEBOOK,
                 budget: c.daily_budget ? Number(c.daily_budget) / 100 : (c.lifetime_budget ? Number(c.lifetime_budget) / 100 : 0),
                 startDate: c.start_time ? new Date(c.start_time) : null,
                 endDate: c.stop_time ? new Date(c.stop_time) : null,
@@ -136,5 +136,22 @@ export class FacebookAdsService implements MarketingPlatformAdapter {
     async exchangeToken(shortLivedToken: string): Promise<string> {
         // TODO: Implement token exchange
         return shortLivedToken;
+    }
+
+    /**
+     * Map Facebook status to CampaignStatus enum
+     */
+    private mapStatus(fbStatus: string): CampaignStatus {
+        switch (fbStatus?.toUpperCase()) {
+            case 'ACTIVE':
+                return CampaignStatus.ACTIVE;
+            case 'PAUSED':
+                return CampaignStatus.PAUSED;
+            case 'DELETED':
+            case 'ARCHIVED':
+                return CampaignStatus.DELETED;
+            default:
+                return CampaignStatus.PAUSED;
+        }
     }
 }

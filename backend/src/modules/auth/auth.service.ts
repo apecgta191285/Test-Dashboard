@@ -4,9 +4,11 @@ import { ConfigService } from '@nestjs/config';
 import { AuthRepository } from './auth.repository';
 import { UsersRepository } from '../users/users.repository';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
+import { PrismaService } from '../prisma/prisma.service';
 import { RegisterDto, LoginDto } from './dto';
 import * as bcrypt from 'bcryptjs';
 import { User, Tenant } from '@prisma/client';
+import { Request } from 'express';
 
 type UserWithTenant = User & { tenant: Tenant };
 
@@ -18,6 +20,7 @@ export class AuthService {
     private readonly jwt: JwtService,
     private readonly config: ConfigService,
     private readonly auditLogsService: AuditLogsService,
+    private readonly prisma: PrismaService,
   ) { }
 
   async register(dto: RegisterDto) {
@@ -44,26 +47,79 @@ export class AuthService {
     return { user, ...tokens };
   }
 
-  async login(dto: LoginDto) {
+  /**
+   * Login with Security Field Updates
+   * - Brute force protection (lock after 5 failed attempts)
+   * - Track lastLoginAt, lastLoginIp
+   * - Track session with IP and UserAgent
+   */
+  async login(dto: LoginDto, request?: Request) {
     const user = await this.usersRepository.findByEmail(dto.email) as UserWithTenant;
+
+    // Check if account is locked
+    if (user?.lockedUntil && user.lockedUntil > new Date()) {
+      const minutesLeft = Math.ceil((user.lockedUntil.getTime() - Date.now()) / 60000);
+      throw new UnauthorizedException(
+        `Account is locked. Try again in ${minutesLeft} minutes.`
+      );
+    }
 
     if (!user || !user.isActive) {
       throw new UnauthorizedException('Invalid credentials');
     }
 
     const valid = await bcrypt.compare(dto.password, user.password);
+
     if (!valid) {
+      // Increment failed login count
+      const newFailedCount = (user.failedLoginCount || 0) + 1;
+      const shouldLock = newFailedCount >= 5;
+
+      await this.prisma.user.update({
+        where: { id: user.id },
+        data: {
+          failedLoginCount: newFailedCount,
+          lockedUntil: shouldLock
+            ? new Date(Date.now() + 30 * 60 * 1000)  // Lock for 30 minutes
+            : null,
+        },
+      });
+
       throw new UnauthorizedException('Invalid credentials');
     }
 
+    // Reset failed count & update login info on successful login
+    const clientIp = request?.ip || request?.socket?.remoteAddress || null;
+    const userAgent = request?.headers?.['user-agent'] || null;
+
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: {
+        lastLoginAt: new Date(),
+        lastLoginIp: clientIp,
+        failedLoginCount: 0,
+        lockedUntil: null,
+      },
+    });
+
     const tokens = await this.generateTokens(user.id, user.email);
-    await this.authRepository.saveRefreshToken(user.id, tokens.refreshToken);
+
+    // Save session with IP and User Agent
+    await this.authRepository.saveRefreshToken(
+      user.id,
+      tokens.refreshToken,
+      clientIp,
+      userAgent,
+    );
 
     await this.auditLogsService.createLog({
       userId: user.id,
       action: 'LOGIN',
       resource: 'Auth',
-      details: { email: user.email },
+      details: {
+        email: user.email,
+        ip: clientIp,
+      },
     });
 
     return {
@@ -81,7 +137,7 @@ export class AuthService {
   /**
    * Refresh token with rotation (ลบ token เก่าก่อนสร้างใหม่)
    */
-  async refreshToken(token: string) {
+  async refreshToken(token: string, request?: Request) {
     try {
       // 1. Verify token
       const payload = await this.jwt.verifyAsync(token, {
@@ -105,7 +161,16 @@ export class AuthService {
 
       // 5. สร้าง tokens ใหม่
       const tokens = await this.generateTokens(user.id, user.email);
-      await this.authRepository.saveRefreshToken(user.id, tokens.refreshToken);
+
+      const clientIp = request?.ip || request?.socket?.remoteAddress || null;
+      const userAgent = request?.headers?.['user-agent'] || null;
+
+      await this.authRepository.saveRefreshToken(
+        user.id,
+        tokens.refreshToken,
+        clientIp,
+        userAgent,
+      );
 
       return tokens;
     } catch (e) {

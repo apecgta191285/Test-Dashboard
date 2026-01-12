@@ -1,7 +1,7 @@
 ﻿import { IsOptional, IsEnum, IsBoolean, IsInt, Min, IsString } from 'class-validator';
 import { Type, Transform } from 'class-transformer';
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { UserRole } from './create-user.dto';
+import { UserRole } from '@prisma/client';
 
 export class QueryUsersDto {
   @ApiPropertyOptional()
@@ -10,7 +10,7 @@ export class QueryUsersDto {
   @IsString()
   search?: string;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ enum: UserRole })
   @IsOptional()
   @IsEnum(UserRole)
   role?: UserRole;

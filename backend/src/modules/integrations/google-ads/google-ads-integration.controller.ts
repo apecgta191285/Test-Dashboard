@@ -3,7 +3,7 @@ import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { GoogleAdsOAuthService } from './google-ads-oauth.service';
 import { UnifiedSyncService } from '../../sync/unified-sync.service';
-import { PlatformType } from '../../../common/enums/platform-type.enum';
+import { AdPlatform } from '@prisma/client';
 
 @ApiTags('integrations/google-ads')
 @Controller('integrations/google-ads')
@@ -13,17 +13,17 @@ export class GoogleAdsIntegrationController {
   constructor(
     private readonly oauthService: GoogleAdsOAuthService,
     private readonly unifiedSyncService: UnifiedSyncService,
-  ) {}
+  ) { }
 
   @Get('status')
   @ApiOperation({ summary: 'Check Google Ads integration status' })
   async getStatus(@Req() req: any) {
-      const tenantId = req.user.tenantId;
-      const result = await this.oauthService.getConnectedAccounts(tenantId);
-      return {
-          isConnected: result.accounts.length > 0,
-          accounts: result.accounts,
-      };
+    const tenantId = req.user.tenantId;
+    const result = await this.oauthService.getConnectedAccounts(tenantId);
+    return {
+      isConnected: result.accounts.length > 0,
+      accounts: result.accounts,
+    };
   }
 
   @Get('auth-url')
@@ -48,7 +48,7 @@ export class GoogleAdsIntegrationController {
   @Get('temp-accounts')
   @ApiOperation({ summary: 'Get temporary accounts for selection' })
   async getTempAccounts(@Query('tempToken') tempToken: string) {
-      return this.oauthService.getTempAccounts(tempToken);
+    return this.oauthService.getTempAccounts(tempToken);
   }
 
   @Post('connect')
@@ -80,29 +80,29 @@ export class GoogleAdsIntegrationController {
   @Post('sync')
   @ApiOperation({ summary: 'Trigger manual sync for Google Ads' })
   async triggerSync(@Request() req) {
-      // Use UnifiedSyncService to sync all accounts for this platform
-      // Note: In a multi-tenant system, syncPlatform might sync ALL tenants if not careful.
-      // UnifiedSyncService.syncPlatform currently syncs ALL accounts in DB.
-      // We should probably use syncAccount for specific accounts or update UnifiedSyncService to filter by tenant.
-      // For now, let's iterate connected accounts and sync them individually using UnifiedSyncService.
-      
-      const tenantId = req.user.tenantId;
-      const result = await this.oauthService.getConnectedAccounts(tenantId);
+    // Use UnifiedSyncService to sync all accounts for this platform
+    // Note: In a multi-tenant system, syncPlatform might sync ALL tenants if not careful.
+    // UnifiedSyncService.syncPlatform currently syncs ALL accounts in DB.
+    // We should probably use syncAccount for specific accounts or update UnifiedSyncService to filter by tenant.
+    // For now, let's iterate connected accounts and sync them individually using UnifiedSyncService.
 
-      if (result.accounts.length === 0) {
-          throw new BadRequestException('No Google Ads account connected');
-      }
+    const tenantId = req.user.tenantId;
+    const result = await this.oauthService.getConnectedAccounts(tenantId);
 
-      const syncResults = [];
-      for (const account of result.accounts) {
-          await this.unifiedSyncService.syncAccount(PlatformType.GOOGLE_ADS, account.id, tenantId);
-          syncResults.push({ accountId: account.id, status: 'STARTED' });
-      }
+    if (result.accounts.length === 0) {
+      throw new BadRequestException('No Google Ads account connected');
+    }
 
-      return {
-          success: true,
-          message: 'Sync started for all connected accounts',
-          results: syncResults
-      };
+    const syncResults = [];
+    for (const account of result.accounts) {
+      await this.unifiedSyncService.syncAccount(AdPlatform.GOOGLE_ADS, account.id, tenantId);
+      syncResults.push({ accountId: account.id, status: 'STARTED' });
+    }
+
+    return {
+      success: true,
+      message: 'Sync started for all connected accounts',
+      results: syncResults
+    };
   }
 }

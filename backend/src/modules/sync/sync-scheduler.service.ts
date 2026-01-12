@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { UnifiedSyncService } from './unified-sync.service';
-import { PlatformType } from '../../common/enums/platform-type.enum';
+import { AdPlatform } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
@@ -19,7 +19,7 @@ export class SyncSchedulerService {
     @Cron(CronExpression.EVERY_6_HOURS)
     async scheduledGoogleAdsSync() {
         this.logger.log('Starting scheduled Google Ads sync (Unified Engine)...');
-        await this.unifiedSyncService.syncPlatform(PlatformType.GOOGLE_ADS);
+        await this.unifiedSyncService.syncPlatform(AdPlatform.GOOGLE_ADS);
         this.logger.log('Scheduled Google Ads sync completed');
     }
 
@@ -29,18 +29,17 @@ export class SyncSchedulerService {
     @Cron(CronExpression.EVERY_6_HOURS)
     async scheduledGA4Sync() {
         this.logger.log('Starting scheduled GA4 sync (Unified Engine)...');
-        await this.unifiedSyncService.syncPlatform(PlatformType.GOOGLE_ANALYTICS);
+        await this.unifiedSyncService.syncPlatform(AdPlatform.GOOGLE_ANALYTICS);
         this.logger.log('Scheduled GA4 sync completed');
     }
 
     /**
      * Scheduled sync for Facebook Ads - runs every 6 hours
-     * (New addition for completeness)
      */
     @Cron(CronExpression.EVERY_6_HOURS)
     async scheduledFacebookAdsSync() {
         this.logger.log('Starting scheduled Facebook Ads sync (Unified Engine)...');
-        await this.unifiedSyncService.syncPlatform(PlatformType.FACEBOOK);
+        await this.unifiedSyncService.syncPlatform(AdPlatform.FACEBOOK);
         this.logger.log('Scheduled Facebook Ads sync completed');
     }
 
@@ -50,7 +49,7 @@ export class SyncSchedulerService {
     @Cron(CronExpression.EVERY_6_HOURS)
     async scheduledTikTokAdsSync() {
         this.logger.log('Starting scheduled TikTok Ads sync (Unified Engine)...');
-        await this.unifiedSyncService.syncPlatform(PlatformType.TIKTOK);
+        await this.unifiedSyncService.syncPlatform(AdPlatform.TIKTOK);
         this.logger.log('Scheduled TikTok Ads sync completed');
     }
 
@@ -60,7 +59,7 @@ export class SyncSchedulerService {
     @Cron(CronExpression.EVERY_6_HOURS)
     async scheduledLineAdsSync() {
         this.logger.log('Starting scheduled LINE Ads sync (Unified Engine)...');
-        await this.unifiedSyncService.syncPlatform(PlatformType.LINE_ADS);
+        await this.unifiedSyncService.syncPlatform(AdPlatform.LINE_ADS);
         this.logger.log('Scheduled LINE Ads sync completed');
     }
 
@@ -74,11 +73,11 @@ export class SyncSchedulerService {
             take: 20,
         });
 
-        const googleAdsLog = latestLogs.find(log => log.platform === 'GOOGLE_ADS');
-        const ga4Log = latestLogs.find(log => log.platform === 'GOOGLE_ANALYTICS');
-        const facebookLog = latestLogs.find(log => log.platform === 'FACEBOOK');
-        const tiktokLog = latestLogs.find(log => log.platform === 'TIKTOK');
-        const lineLog = latestLogs.find(log => log.platform === 'LINE_ADS');
+        const googleAdsLog = latestLogs.find(log => log.platform === AdPlatform.GOOGLE_ADS);
+        const ga4Log = latestLogs.find(log => log.platform === AdPlatform.GOOGLE_ANALYTICS);
+        const facebookLog = latestLogs.find(log => log.platform === AdPlatform.FACEBOOK);
+        const tiktokLog = latestLogs.find(log => log.platform === AdPlatform.TIKTOK);
+        const lineLog = latestLogs.find(log => log.platform === AdPlatform.LINE_ADS);
 
         const formatStatus = (log: any) => log ? {
             lastSyncAt: log.completedAt,

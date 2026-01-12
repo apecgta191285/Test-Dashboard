@@ -12,6 +12,7 @@ import {
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { AlertService } from './alert.service';
+import { AlertSeverity, AlertStatus } from '@prisma/client';
 
 @Controller('alerts')
 @UseGuards(JwtAuthGuard)
@@ -22,19 +23,16 @@ export class AlertController {
     // Alert Rules Endpoints
     // ============================================
 
-    // Get all rules
     @Get('rules')
     async getRules(@Request() req) {
         return this.alertService.getRules(req.user.tenantId);
     }
 
-    // Initialize preset rules (for new tenant)
     @Post('rules/init')
     async initializePresetRules(@Request() req) {
         return this.alertService.initializePresetRules(req.user.tenantId);
     }
 
-    // Create custom rule
     @Post('rules')
     async createRule(
         @Request() req,
@@ -47,10 +45,18 @@ export class AlertController {
             description?: string;
         },
     ) {
-        return this.alertService.createRule(req.user.tenantId, body);
+        // Cast severity string to enum if provided
+        const data = {
+            name: body.name,
+            metric: body.metric,
+            operator: body.operator,
+            threshold: body.threshold,
+            severity: body.severity ? (body.severity as AlertSeverity) : undefined,
+            description: body.description,
+        };
+        return this.alertService.createRule(req.user.tenantId, data);
     }
 
-    // Update rule
     @Put('rules/:id')
     async updateRule(
         @Request() req,
@@ -60,13 +66,11 @@ export class AlertController {
         return this.alertService.updateRule(id, req.user.tenantId, body);
     }
 
-    // Toggle rule
     @Put('rules/:id/toggle')
     async toggleRule(@Request() req, @Param('id') id: string) {
         return this.alertService.toggleRule(id, req.user.tenantId);
     }
 
-    // Delete rule
     @Delete('rules/:id')
     async deleteRule(@Request() req, @Param('id') id: string) {
         return this.alertService.deleteRule(id, req.user.tenantId);
@@ -76,7 +80,6 @@ export class AlertController {
     // Alerts Endpoints
     // ============================================
 
-    // Get all alerts
     @Get()
     async getAlerts(
         @Request() req,
@@ -84,38 +87,34 @@ export class AlertController {
         @Query('severity') severity?: string,
         @Query('limit') limit?: string,
     ) {
+        // Cast string query params to enum types
         return this.alertService.getAlerts(req.user.tenantId, {
-            status,
-            severity,
+            status: status ? (status as AlertStatus) : undefined,
+            severity: severity ? (severity as AlertSeverity) : undefined,
             limit: limit ? parseInt(limit) : undefined,
         });
     }
 
-    // Get open alerts count (for badge)
     @Get('count')
     async getOpenAlertsCount(@Request() req) {
         return this.alertService.getOpenAlertsCount(req.user.tenantId);
     }
 
-    // Check alerts (on-demand)
     @Post('check')
     async checkAlerts(@Request() req) {
         return this.alertService.checkAlerts(req.user.tenantId);
     }
 
-    // Acknowledge alert
     @Put(':id/acknowledge')
     async acknowledgeAlert(@Request() req, @Param('id') id: string) {
         return this.alertService.acknowledgeAlert(id, req.user.tenantId);
     }
 
-    // Resolve alert
     @Put(':id/resolve')
     async resolveAlert(@Request() req, @Param('id') id: string) {
         return this.alertService.resolveAlert(id, req.user.tenantId);
     }
 
-    // Resolve all alerts
     @Post('resolve-all')
     async resolveAllAlerts(@Request() req) {
         return this.alertService.resolveAllAlerts(req.user.tenantId);

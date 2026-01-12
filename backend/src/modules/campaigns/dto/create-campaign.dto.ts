@@ -1,6 +1,6 @@
 ﻿import { ApiProperty } from '@nestjs/swagger';
 import { IsString, IsNotEmpty, IsEnum, IsNumber, IsOptional, IsDateString } from 'class-validator';
-import { CampaignPlatform, CampaignStatus } from './enums';
+import { CampaignStatus, AdPlatform } from '@prisma/client';
 
 export class CreateCampaignDto {
   @ApiProperty({ example: 'Summer Sale 2024' })
@@ -8,9 +8,9 @@ export class CreateCampaignDto {
   @IsNotEmpty()
   name: string;
 
-  @ApiProperty({ enum: CampaignPlatform })
-  @IsEnum(CampaignPlatform)
-  platform: CampaignPlatform;
+  @ApiProperty({ enum: AdPlatform })
+  @IsEnum(AdPlatform)
+  platform: AdPlatform;
 
   @ApiProperty({ enum: CampaignStatus, example: 'ACTIVE' })
   @IsEnum(CampaignStatus)
@@ -37,4 +37,3 @@ export class CreateCampaignDto {
   @IsOptional()
   externalId?: string;
 }
-

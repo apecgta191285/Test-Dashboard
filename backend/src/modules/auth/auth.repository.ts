@@ -1,11 +1,16 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { RegisterDto } from './dto';
-import { User } from '@prisma/client';
+import { User, UserRole } from '@prisma/client';
 
 export abstract class AuthRepository {
     abstract createTenantAndUser(dto: RegisterDto, hashedPassword: string): Promise<User>;
-    abstract saveRefreshToken(userId: string, refreshToken: string): Promise<void>;
+    abstract saveRefreshToken(
+        userId: string,
+        refreshToken: string,
+        ipAddress?: string | null,
+        userAgent?: string | null,
+    ): Promise<void>;
     abstract deleteRefreshToken(token: string): Promise<void>;
     abstract revokeAllUserSessions(userId: string): Promise<void>;
     abstract findSessionByToken(token: string): Promise<{ userId: string } | null>;
@@ -26,7 +31,7 @@ export class PrismaAuthRepository implements AuthRepository {
                     email: dto.email,
                     password: hashedPassword,
                     name: dto.name,
-                    role: 'ADMIN',
+                    role: UserRole.ADMIN,
                     tenantId: tenant.id,
                 },
                 include: { tenant: true },
@@ -34,12 +39,22 @@ export class PrismaAuthRepository implements AuthRepository {
         });
     }
 
-    async saveRefreshToken(userId: string, refreshToken: string): Promise<void> {
+    /**
+     * Save refresh token with optional IP and UserAgent tracking
+     */
+    async saveRefreshToken(
+        userId: string,
+        refreshToken: string,
+        ipAddress?: string | null,
+        userAgent?: string | null,
+    ): Promise<void> {
         await this.prisma.session.create({
             data: {
                 userId,
                 refreshToken,
                 expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+                ipAddress: ipAddress || null,
+                userAgent: userAgent || null,
             },
         });
     }

@@ -4,7 +4,7 @@ import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { GoogleAdsCampaignService } from './google-ads-campaign.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { UnifiedSyncService } from '../../sync/unified-sync.service';
-import { PlatformType } from '../../../common/enums/platform-type.enum';
+import { AdPlatform } from '@prisma/client';
 
 @ApiTags('integrations/google-ads')
 @Controller('integrations/google-ads')
@@ -53,7 +53,7 @@ export class GoogleAdsCampaignController {
     ) {
         await this.validateAccountOwnership(accountId, req.user.tenantId);
         // Use UnifiedSyncService
-        await this.unifiedSyncService.syncAccount(PlatformType.GOOGLE_ADS, accountId, req.user.tenantId);
+        await this.unifiedSyncService.syncAccount(AdPlatform.GOOGLE_ADS, accountId, req.user.tenantId);
         return { success: true, message: 'Sync started' };
     }
 
@@ -71,7 +71,7 @@ export class GoogleAdsCampaignController {
         await this.validateAccountOwnership(accountId, req.user.tenantId);
         // Unified Sync handles everything at account level.
         // We trigger a full account sync which includes metrics.
-        await this.unifiedSyncService.syncAccount(PlatformType.GOOGLE_ADS, accountId, req.user.tenantId);
+        await this.unifiedSyncService.syncAccount(AdPlatform.GOOGLE_ADS, accountId, req.user.tenantId);
         return { success: true, message: 'Sync started (Account Level)' };
     }
 
@@ -86,7 +86,7 @@ export class GoogleAdsCampaignController {
     ) {
         await this.validateAccountOwnership(accountId, req.user.tenantId);
         // Use UnifiedSyncService
-        await this.unifiedSyncService.syncAccount(PlatformType.GOOGLE_ADS, accountId, req.user.tenantId);
+        await this.unifiedSyncService.syncAccount(AdPlatform.GOOGLE_ADS, accountId, req.user.tenantId);
         return { success: true, message: 'Sync started' };
     }
 }

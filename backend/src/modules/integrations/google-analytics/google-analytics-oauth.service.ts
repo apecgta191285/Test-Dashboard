@@ -6,7 +6,7 @@ import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { Cache } from 'cache-manager';
 import { v4 as uuidv4 } from 'uuid';
 import { UnifiedSyncService } from '../../sync/unified-sync.service';
-import { PlatformType } from '../../../common/enums/platform-type.enum';
+import { AdPlatform, SyncType, SyncStatus } from '@prisma/client';
 import { EncryptionService } from '../../../common/services/encryption.service';
 
 @Injectable()
@@ -18,14 +18,13 @@ export class GoogleAnalyticsOAuthService {
         private readonly configService: ConfigService,
         private readonly prisma: PrismaService,
         @Inject(CACHE_MANAGER) private cacheManager: Cache,
-        @Inject(CACHE_MANAGER) private cacheManager: Cache,
         private readonly unifiedSyncService: UnifiedSyncService,
         private readonly encryptionService: EncryptionService,
     ) {
         this.oauth2Client = new google.auth.OAuth2(
             this.configService.get('GOOGLE_CLIENT_ID'),
             this.configService.get('GOOGLE_CLIENT_SECRET'),
-            this.configService.get('GOOGLE_REDIRECT_URI_GA4'), // Separate redirect URI if needed, or reuse
+            this.configService.get('GOOGLE_REDIRECT_URI_GA4'),
         );
     }
 
@@ -101,10 +100,6 @@ export class GoogleAnalyticsOAuthService {
             throw new BadRequestException('Session expired or invalid token');
         }
 
-        // We need the property name. Since we don't have it here, we might need to fetch it again or just save placeholder.
-        // Or we can ask frontend to send it?
-        // Let's try to fetch details using the refresh token (get access token first)
-
         // Get cached properties to find the property name
         const cachedProperties = await this.cacheManager.get<any[]>(`ga4_temp_properties:${tempToken}`);
         const selectedProperty = cachedProperties?.find(p => p.propertyId === propertyId);
@@ -122,7 +117,7 @@ export class GoogleAnalyticsOAuthService {
                 where: { id: existing.id },
                 data: {
                     refreshToken: this.encryptionService.encrypt(refreshToken),
-                    propertyName, // Update with proper name
+                    propertyName,
                     status: 'ACTIVE',
                     updatedAt: new Date()
                 }
@@ -133,9 +128,7 @@ export class GoogleAnalyticsOAuthService {
                 data: {
                     tenantId,
                     propertyId,
-                    propertyName, // Use name from property list
-                    propertyId,
-                    propertyName, // Use name from property list
+                    propertyName,
                     refreshToken: this.encryptionService.encrypt(refreshToken),
                     accessToken: 'placeholder',
                     status: 'ACTIVE'
@@ -148,7 +141,7 @@ export class GoogleAnalyticsOAuthService {
         await this.cacheManager.del(`ga4_temp_token:${tempToken}`);
         await this.cacheManager.del(`ga4_temp_properties:${tempToken}`);
 
-        // 🚀 Trigger Initial Sync for GA4 (non-blocking) using Unified Engine
+        // Trigger Initial Sync for GA4 (non-blocking) using Unified Engine
         this.triggerInitialSync(accountId, tenantId);
 
         return { success: true, accountId };
@@ -162,22 +155,22 @@ export class GoogleAnalyticsOAuthService {
             const syncLog = await this.prisma.syncLog.create({
                 data: {
                     tenantId,
-                    platform: 'GA4',
+                    platform: AdPlatform.GOOGLE_ANALYTICS,
                     accountId,
-                    syncType: 'INITIAL',
-                    status: 'STARTED',
+                    syncType: SyncType.INITIAL,
+                    status: SyncStatus.STARTED,
                     startedAt: new Date(),
                 }
             });
 
             // Run sync
-            await this.unifiedSyncService.syncAccount(PlatformType.GOOGLE_ANALYTICS, accountId, tenantId);
+            await this.unifiedSyncService.syncAccount(AdPlatform.GOOGLE_ANALYTICS, accountId, tenantId);
 
             // Update SyncLog
             await this.prisma.syncLog.update({
                 where: { id: syncLog.id },
                 data: {
-                    status: 'COMPLETED',
+                    status: SyncStatus.COMPLETED,
                     completedAt: new Date(),
                 }
             });
@@ -185,11 +178,8 @@ export class GoogleAnalyticsOAuthService {
             this.logger.log(`[Initial Sync] Completed for GA4 account ${accountId}`);
         } catch (error) {
             this.logger.error(`[Initial Sync] Failed for GA4 account ${accountId}: ${error.message}`);
-            // Log error update logic here if needed
         }
     }
-
-
 
     private async listProperties(accessToken: string) {
         try {
@@ -223,7 +213,6 @@ export class GoogleAnalyticsOAuthService {
 
         } catch (error) {
             this.logger.error(`Failed to list GA4 properties: ${error.message}`, error.stack);
-            // Throw error so frontend knows something went wrong instead of showing mock
             throw new BadRequestException(
                 `ไม่สามารถดึง GA4 Properties ได้: ${error.message}. กรุณาตรวจสอบว่าเปิด Google Analytics Admin API ใน Google Cloud Console แล้ว`
             );

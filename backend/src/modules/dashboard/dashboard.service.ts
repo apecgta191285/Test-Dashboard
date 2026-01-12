@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { DateRangeUtil } from '../../common/utils/date-range.util';
 import { MockDataSeederService } from './mock-data-seeder.service';
+import { CampaignStatus, AdPlatform, Prisma } from '@prisma/client';
 
 /**
  * DashboardService - Clean version following Seed Pattern
@@ -27,7 +28,7 @@ export class DashboardService {
     const activeCampaigns = await this.prisma.campaign.count({
       where: {
         tenantId,
-        status: 'ACTIVE'
+        status: CampaignStatus.ACTIVE
       },
     });
 
@@ -127,21 +128,27 @@ export class DashboardService {
     const { startDate: currentStartDate, endDate: today } = DateRangeUtil.getDateRange(days);
     const { startDate: previousStartDate } = DateRangeUtil.getPreviousPeriodDateRange(currentStartDate, days);
 
-    // Build where clause based on platform
-    const platformFilter = platform !== 'ALL' ? { platform } : {};
+    // Build where clause based on platform - properly type cast
+    const campaignFilter: Prisma.CampaignWhereInput = { tenantId };
+    const campaignFilterActive: Prisma.CampaignWhereInput = { tenantId, status: CampaignStatus.ACTIVE };
+
+    if (platform !== 'ALL') {
+      campaignFilter.platform = platform as AdPlatform;
+      campaignFilterActive.platform = platform as AdPlatform;
+    }
 
     // Get campaigns filtered by platform
     const totalCampaigns = await this.prisma.campaign.count({
-      where: { tenantId, ...platformFilter },
+      where: campaignFilter,
     });
     const activeCampaigns = await this.prisma.campaign.count({
-      where: { tenantId, status: 'ACTIVE', ...platformFilter },
+      where: campaignFilterActive,
     });
 
     // Get metrics for current period
     const currentMetrics = await this.prisma.metric.aggregate({
       where: {
-        campaign: { tenantId, ...platformFilter },
+        campaign: campaignFilter,
         date: { gte: currentStartDate, lte: today },
       },
       _sum: { impressions: true, clicks: true, spend: true, conversions: true },
@@ -150,7 +157,7 @@ export class DashboardService {
     // Get metrics for previous period
     const previousMetrics = await this.prisma.metric.aggregate({
       where: {
-        campaign: { tenantId, ...platformFilter },
+        campaign: campaignFilter,
         date: { gte: previousStartDate, lt: currentStartDate },
       },
       _sum: { impressions: true, clicks: true, spend: true, conversions: true },
@@ -164,7 +171,7 @@ export class DashboardService {
     // Check if mock data
     const hasMockData = await this.prisma.metric.findFirst({
       where: {
-        campaign: { tenantId, ...platformFilter },
+        campaign: campaignFilter,
         date: { gte: currentStartDate, lte: today },
         isMockData: true,
       },
@@ -298,8 +305,11 @@ export class DashboardService {
     let hasTargets = false;
     if (tenant?.settings) {
       try {
-        const settings = JSON.parse(tenant.settings);
-        hasTargets = !!settings.kpiTargets;
+        // Handle both string and object JSON values
+        const settings = typeof tenant.settings === 'string'
+          ? JSON.parse(tenant.settings as string)
+          : tenant.settings;
+        hasTargets = !!settings?.kpiTargets;
       } catch (e) {
         // Invalid JSON
       }

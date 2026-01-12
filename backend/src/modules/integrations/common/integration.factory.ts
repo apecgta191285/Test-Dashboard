@@ -5,7 +5,7 @@ import { FacebookAdsService } from '../facebook/facebook-ads.service';
 import { GoogleAnalyticsAdapterService } from '../google-analytics/google-analytics-adapter.service';
 import { TikTokAdsService } from '../tiktok/tiktok-ads.service';
 import { LineAdsAdapterService } from '../line-ads/line-ads-adapter.service';
-import { PlatformType } from '../../../common/enums/platform-type.enum';
+import { AdPlatform } from '@prisma/client';
 
 @Injectable()
 export class IntegrationFactory {
@@ -17,20 +17,27 @@ export class IntegrationFactory {
         private readonly lineAdsAdapterService: LineAdsAdapterService,
     ) { }
 
-    getAdapter(platform: string): MarketingPlatformAdapter {
+    getAdapter(platform: string | AdPlatform): MarketingPlatformAdapter {
         // Normalize input to uppercase to match Enum keys
-        const normalizedPlatform = platform.toUpperCase();
+        const normalizedPlatform = typeof platform === 'string'
+            ? platform.toUpperCase()
+            : platform;
 
         switch (normalizedPlatform) {
-            case PlatformType.GOOGLE_ADS:
+            case AdPlatform.GOOGLE_ADS:
+            case 'GOOGLE_ADS':
                 return this.googleAdsService;
-            case PlatformType.FACEBOOK:
+            case AdPlatform.FACEBOOK:
+            case 'FACEBOOK':
                 return this.facebookAdsService;
-            case PlatformType.GOOGLE_ANALYTICS:
+            case AdPlatform.GOOGLE_ANALYTICS:
+            case 'GOOGLE_ANALYTICS':
                 return this.googleAnalyticsAdapterService;
-            case PlatformType.TIKTOK:
+            case AdPlatform.TIKTOK:
+            case 'TIKTOK':
                 return this.tiktokAdsService;
-            case PlatformType.LINE_ADS:
+            case AdPlatform.LINE_ADS:
+            case 'LINE_ADS':
                 return this.lineAdsAdapterService;
             default:
                 throw new NotImplementedException(`Platform ${platform} not supported`);

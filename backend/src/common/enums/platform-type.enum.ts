@@ -1,7 +1,0 @@
-export enum PlatformType {
-    GOOGLE_ADS = 'GOOGLE_ADS',
-    FACEBOOK = 'FACEBOOK',
-    GOOGLE_ANALYTICS = 'GOOGLE_ANALYTICS',
-    TIKTOK = 'TIKTOK',
-    LINE_ADS = 'LINE_ADS',
-}

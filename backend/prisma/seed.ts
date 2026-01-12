@@ -1,5 +1,5 @@
-// prisma/seed.ts (Fixed: Removed emailVerified to match Schema)
-import { PrismaClient, UserRole, CampaignStatus, NotificationType, NotificationChannel, NotificationStatus, AdPlatform, AlertSeverity, SyncStatus, AlertStatus, AlertRuleType, SyncType } from '@prisma/client';
+// prisma/seed.ts (Fixed: Removed non-existent enum imports)
+import { PrismaClient, UserRole, CampaignStatus, NotificationChannel, AdPlatform, AlertSeverity, SyncStatus, AlertStatus, AlertRuleType, SyncType } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 
 const prisma = new PrismaClient();
@@ -43,7 +43,6 @@ async function main() {
       role: UserRole.ADMIN,
       tenantId: tenant.id,
       lastLoginAt: new Date(),
-      // ❌ ลบ emailVerified ออกแล้ว เพื่อให้ตรงกับ Schema
     },
   });
 
