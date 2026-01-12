@@ -4,6 +4,7 @@ import { useLocation } from 'wouter';
 import { Button } from '@/components/ui/button';
 import { Menu, X, LogOut, BarChart3, Users, Zap, Settings, FileText, TrendingUp, Search, ShoppingBag, MessageSquare, Layers } from 'lucide-react';
 import { APP_LOGO, APP_TITLE } from '@/const';
+import { UserRole } from '@/types/enums';
 
 export function Sidebar() {
     const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -45,7 +46,7 @@ export function Sidebar() {
             items: [
                 { label: 'Settings', href: '/settings', icon: Settings },
                 { label: 'Reports', href: '/reports', icon: FileText },
-                ...(user?.role === 'ADMIN' ? [{ label: 'Users', href: '/users', icon: Users }] : []),
+                ...(user?.role === UserRole.ADMIN ? [{ label: 'Users', href: '/users', icon: Users }] : []),
             ]
         }
     ];

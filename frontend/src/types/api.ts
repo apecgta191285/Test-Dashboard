@@ -1,3 +1,12 @@
+import type {
+  UserRole,
+  CampaignStatus,
+  AdPlatform,
+  AlertSeverity,
+  NotificationChannel,
+  SyncStatus,
+} from './enums';
+
 export interface Metric {
   id: string;
   tenantId: string;
@@ -53,8 +62,8 @@ export interface Campaign extends CampaignMetrics {
   integrationId?: string;
   externalId?: string;
   name: string;
-  platform: string;
-  status: string;
+  platform: AdPlatform | string; // 🔄 Prefer AdPlatform, string for backward compat
+  status: CampaignStatus | string; // 🔄 Prefer CampaignStatus, string for backward compat
   objective?: string;
   budget?: string | number;
   budgetType?: string;
@@ -63,6 +72,8 @@ export interface Campaign extends CampaignMetrics {
   endDate?: string;
   createdAt?: string;
   updatedAt?: string;
+  lastSyncedAt?: string; // 🆕 Sprint 4
+  syncStatus?: SyncStatus; // 🆕 Sprint 4
   // Nested metrics object (for TopCampaignsTable compatibility)
   metrics?: CampaignMetrics;
 }
@@ -102,17 +113,27 @@ export interface User {
   avatarUrl?: string | null;
   title?: string | null;
   location?: string | null;
-  lastLogin?: string | null;
   team?: string | null;
   timezone?: string | null;
   language?: string | null;
   bio?: string | null;
   social?: Record<string, string> | null;
-  role: string;
+  role: UserRole | string; // 🔄 Prefer UserRole, string for backward compat
   tenantId: string;
   tenant?: TenantInfo;
   companyName?: string;
   createdAt?: string;
+
+  // 🆕 Sprint 4 Security Fields
+  lastLoginAt?: string;
+  lastLoginIp?: string;
+  failedLoginCount?: number;
+  lockedUntil?: string;
+  twoFactorEnabled?: boolean;
+  passwordChangedAt?: string;
+
+  // 🆕 Preferences
+  notificationPreferences?: Record<string, boolean>;
 }
 
 export interface AuthResponse {
@@ -191,6 +212,45 @@ export interface PaginatedResponse<T> {
 }
 
 export interface ApiResponse<T> {
+  success: boolean;
   data: T;
+  error?: string;
   message?: string;
+  meta?: {
+    total?: number;
+    page?: number;
+    limit?: number;
+    totalPages?: number;
+  };
 }
+
+// =============================================================================
+// 🆕 NOTIFICATION (Sprint 4)
+// =============================================================================
+export interface Notification {
+  id: string;
+  tenantId: string;
+  userId: string;
+  type: string;
+  title: string;
+  message: string;
+  channel: NotificationChannel;
+  priority: 'LOW' | 'NORMAL' | 'HIGH' | 'URGENT';
+  metadata?: {
+    actionUrl?: string;
+    actionText?: string;
+    icon?: string;
+    alertType?: string;
+    severity?: AlertSeverity;
+  };
+  isRead: boolean;
+  readAt?: string;
+  isDismissed: boolean;
+  alertId?: string;
+  campaignId?: string;
+  scheduledAt?: string;
+  sentAt?: string;
+  createdAt: string;
+  expiresAt?: string;
+}
+
