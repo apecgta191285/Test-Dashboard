@@ -1,9 +1,20 @@
 // src/stores/auth-store.ts
+// =============================================================================
+// Authentication State Management (Zustand)
+// Uses token-manager.ts for token storage to avoid circular dependency
+// =============================================================================
+
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import type { User } from '@/types/api';
 import { apiClient } from '@/services/api-client';
 import { authEvents, AUTH_EVENTS } from '@/lib/auth-events';
+import {
+    setTokens,
+    clearTokens,
+    getAccessToken,
+    getRefreshToken,
+} from '@/lib/token-manager';
 
 // =============================================================================
 // Types
@@ -32,7 +43,6 @@ interface AuthState {
     setUser: (user: User | null) => void;
     clearError: () => void;
     initializeAuth: () => void;
-    setTokens: (accessToken: string, refreshToken: string) => void;
 }
 
 // =============================================================================
@@ -62,9 +72,8 @@ export const useAuthStore = create<AuthState>()(
                     // ✅ Sprint 4 Standard: Extract from response.data.data
                     const { accessToken, refreshToken, user } = response.data.data;
 
-                    // Store tokens
-                    localStorage.setItem('accessToken', accessToken);
-                    localStorage.setItem('refreshToken', refreshToken);
+                    // ✅ Use token-manager (single source of truth)
+                    setTokens(accessToken, refreshToken);
 
                     set({
                         user,
@@ -74,8 +83,9 @@ export const useAuthStore = create<AuthState>()(
                         isLoading: false,
                         error: null,
                     });
-                } catch (error: any) {
-                    const errorData = error.response?.data;
+                } catch (error: unknown) {
+                    const err = error as { response?: { data?: { message?: string; error?: string; lockoutMinutes?: number; remainingAttempts?: number } } };
+                    const errorData = err.response?.data;
                     let message = errorData?.message || 'Login failed';
 
                     // Handle account locked error
@@ -100,9 +110,8 @@ export const useAuthStore = create<AuthState>()(
                     // ✅ Sprint 4 Standard: Extract from response.data.data
                     const { accessToken, refreshToken, user } = response.data.data;
 
-                    // Store tokens
-                    localStorage.setItem('accessToken', accessToken);
-                    localStorage.setItem('refreshToken', refreshToken);
+                    // ✅ Use token-manager (single source of truth)
+                    setTokens(accessToken, refreshToken);
 
                     set({
                         user,
@@ -112,8 +121,9 @@ export const useAuthStore = create<AuthState>()(
                         isLoading: false,
                         error: null,
                     });
-                } catch (error: any) {
-                    const message = error.response?.data?.message || 'Registration failed';
+                } catch (error: unknown) {
+                    const err = error as { response?: { data?: { message?: string } } };
+                    const message = err.response?.data?.message || 'Registration failed';
                     set({ error: message, isLoading: false });
                     throw error;
                 }
@@ -121,8 +131,8 @@ export const useAuthStore = create<AuthState>()(
 
             // Logout Action
             logout: () => {
-                localStorage.removeItem('accessToken');
-                localStorage.removeItem('refreshToken');
+                // ✅ Use token-manager (single source of truth)
+                clearTokens();
                 set({
                     user: null,
                     accessToken: null,
@@ -138,17 +148,11 @@ export const useAuthStore = create<AuthState>()(
             // Clear Error
             clearError: () => set({ error: null }),
 
-            // Set Tokens (for token refresh)
-            setTokens: (accessToken, refreshToken) => {
-                localStorage.setItem('accessToken', accessToken);
-                localStorage.setItem('refreshToken', refreshToken);
-                set({ accessToken, refreshToken });
-            },
-
             // Initialize Auth (called on app mount)
             initializeAuth: () => {
-                const accessToken = localStorage.getItem('accessToken');
-                const refreshToken = localStorage.getItem('refreshToken');
+                // ✅ Read from token-manager (single source of truth)
+                const accessToken = getAccessToken();
+                const refreshToken = getRefreshToken();
                 const { user } = get();
 
                 if (accessToken && user) {
@@ -172,16 +176,18 @@ export const useAuthStore = create<AuthState>()(
         {
             name: 'auth-storage',
             storage: createJSONStorage(() => localStorage),
+            // ✅ Only persist user data, tokens are managed by token-manager
             partialize: (state) => ({
                 user: state.user,
-                accessToken: state.accessToken,
-                refreshToken: state.refreshToken,
                 isAuthenticated: state.isAuthenticated,
             }),
             onRehydrateStorage: () => {
                 // Called when store is rehydrated from localStorage
                 return (state: AuthState | undefined) => {
                     if (state) {
+                        // ✅ Sync tokens from token-manager on rehydrate
+                        state.accessToken = getAccessToken();
+                        state.refreshToken = getRefreshToken();
                         state.isInitialized = true;
                     }
                 };

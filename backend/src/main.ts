@@ -43,7 +43,7 @@ async function bootstrap() {
   );
 
   // CORS - Read from environment with fallback to development defaults
-  const corsOrigins = process.env.CORS_ORIGINS || 'http://localhost:3001,http://localhost:3000';
+  const corsOrigins = process.env.CORS_ORIGINS || 'http://localhost:5173,http://localhost:3000,http://localhost:3001';
   const originList = corsOrigins.split(',').map(o => o.trim());
 
   app.enableCors({

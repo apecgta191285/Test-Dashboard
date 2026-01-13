@@ -478,6 +478,49 @@ apiClient.interceptors.response.use(
 
 ---
 
+### 2.3.1 Token Manager Pattern
+
+> [!IMPORTANT]
+> เราใช้ **Token Manager Pattern** เพื่อแก้ปัญหา Circular Dependency ระหว่าง `api-client.ts` และ `auth-store.ts`
+
+**Architecture:**
+```
+┌──────────────────┐
+│  token-manager.ts │  ← Standalone (NO dependencies)
+│  - getAccessToken │
+│  - setTokens      │
+│  - clearTokens    │
+└────────┬─────────┘
+         │
+    ┌────┴────┐
+    ↓         ↓
+auth-store   api-client
+```
+
+**File Location:** `src/lib/token-manager.ts`
+
+```typescript
+// ✅ CORRECT - Import from token-manager
+import { getAccessToken, setTokens, clearTokens } from '@/lib/token-manager';
+
+// ❌ WRONG - Never import auth-store in api-client (causes circular dependency)
+import { useAuthStore } from '@/stores/auth-store';
+```
+
+**Rules:**
+1. `token-manager.ts` must **NEVER** import from `auth-store` or `api-client`
+2. Use `token-manager` for **all** localStorage token operations
+3. `auth-store` syncs its state from `token-manager` on rehydrate
+4. `api-client` reads tokens from `token-manager` for Authorization header
+
+**Benefits:**
+- ✅ No circular dependency
+- ✅ Single source of truth for tokens
+- ✅ Tree-shakeable (pure functions)
+- ✅ Easy to test
+
+---
+
 ### 2.4 Standard API Response Handling
 
 ```typescript
@@ -724,3 +767,4 @@ const apiUrl = import.meta.env.VITE_API_URL;
 > **Document Owner:** Senior Frontend Architect  
 > **Enforcement:** All Code Reviews  
 > **Violations:** PR will be rejected
+

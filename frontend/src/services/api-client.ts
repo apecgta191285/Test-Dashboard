@@ -1,9 +1,20 @@
 // src/services/api-client.ts
+// =============================================================================
+// Axios API Client with Token Management
+// Uses token-manager.ts to avoid circular dependency with auth-store
+// =============================================================================
+
 import axios, {
     AxiosInstance,
     AxiosError,
     InternalAxiosRequestConfig,
 } from 'axios';
+import {
+    getAccessToken,
+    getRefreshToken,
+    setTokens,
+    clearTokens,
+} from '@/lib/token-manager';
 import { dispatchSessionExpired } from '@/lib/auth-events';
 
 const API_BASE_URL =
@@ -19,31 +30,6 @@ export const apiClient: AxiosInstance = axios.create({
     },
     timeout: 30000,
 });
-
-// =============================================================================
-// Token Helpers (Lazy import to avoid circular dependency)
-// =============================================================================
-const getAccessToken = (): string | null => {
-    // ✅ FIX: Import auth store lazily to avoid circular dependency
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { useAuthStore } = require('@/stores/auth-store');
-    return useAuthStore.getState().accessToken || localStorage.getItem('accessToken');
-};
-
-const getRefreshToken = (): string | null => {
-    const { useAuthStore } = require('@/stores/auth-store');
-    return useAuthStore.getState().refreshToken || localStorage.getItem('refreshToken');
-};
-
-const setTokens = (access: string, refresh: string): void => {
-    const { useAuthStore } = require('@/stores/auth-store');
-    useAuthStore.getState().setTokens(access, refresh);
-};
-
-const performLogout = (): void => {
-    const { useAuthStore } = require('@/stores/auth-store');
-    useAuthStore.getState().logout();
-};
 
 // =============================================================================
 // Refresh Token Queue (Prevent Race Conditions)
@@ -70,7 +56,7 @@ const processQueue = (error: Error | null, token: string | null = null) => {
 // =============================================================================
 apiClient.interceptors.request.use(
     (config: InternalAxiosRequestConfig) => {
-        // ✅ FIX: Get token from Zustand store
+        // ✅ Use token-manager (no circular dependency)
         const token = getAccessToken();
         if (token && config.headers) {
             config.headers.Authorization = `Bearer ${token}`;
@@ -81,10 +67,37 @@ apiClient.interceptors.request.use(
 );
 
 // =============================================================================
-// Response Interceptor (Auto Refresh Token)
+// Response Interceptor (Auto Refresh Token + Auto Unwrap)
 // =============================================================================
 apiClient.interceptors.response.use(
-    (response) => response,
+    (response) => {
+        // ✅ Auto-unwrap Standard API Response { success: true, data: [...] }
+        // This prevents "data.map is not a function" errors across all services
+        const responseData = response.data;
+
+        // Check if this is a Standard Wrapped Response
+        if (
+            responseData &&
+            typeof responseData === 'object' &&
+            'success' in responseData &&
+            'data' in responseData
+        ) {
+            // Validate success flag
+            if (!responseData.success) {
+                // If backend explicitly says success: false, reject with error
+                const errorMessage =
+                    responseData.message || responseData.error || 'API Error';
+                return Promise.reject(new Error(errorMessage));
+            }
+
+            // ✅ Unwrap: Return inner data directly to services
+            // Services will receive Array/Object directly, not { success, data }
+            response.data = responseData.data;
+        }
+
+        // For blob/file downloads or non-standard responses, return as-is
+        return response;
+    },
     async (error: AxiosError) => {
         const originalRequest = error.config as InternalAxiosRequestConfig & {
             _retry?: boolean;
@@ -118,11 +131,11 @@ apiClient.interceptors.response.use(
                     refreshToken,
                 });
 
-                // ✅ Sprint 4 Standard: Backend returns { success, data: { accessToken, refreshToken } }
+                // Sprint 4 Standard: Backend returns { success, data: { accessToken, refreshToken } }
                 const { accessToken, refreshToken: newRefreshToken } =
                     response.data.data;
 
-                // ✅ FIX: Update tokens in Zustand store
+                // ✅ Update tokens via token-manager
                 setTokens(accessToken, newRefreshToken);
 
                 // Process queued requests
@@ -137,10 +150,10 @@ apiClient.interceptors.response.use(
                 // Refresh failed - logout user
                 processQueue(refreshError as Error, null);
 
-                // ✅ FIX: Logout via Zustand store
-                performLogout();
+                // ✅ Clear tokens via token-manager
+                clearTokens();
 
-                // ✅ FIX: Dispatch event instead of hard reload
+                // Dispatch event for React to handle navigation
                 dispatchSessionExpired();
 
                 return Promise.reject(refreshError);
