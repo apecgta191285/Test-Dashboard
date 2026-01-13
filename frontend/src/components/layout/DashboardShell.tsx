@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { LogOut, MessageCircle, Send } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { useAuth } from '@/contexts/AuthContext'
+import { useAuthStore, selectUser, selectIsLoading } from '@/stores/auth-store'
 
 interface MenuItem {
     label: string
@@ -54,7 +54,10 @@ const DashboardShell: React.FC<DashboardShellProps> = ({
     const [fabPosition, setFabPosition] = useState({ x: 0, y: 0 })
     const [dragStart, setDragStart] = useState({ x: 0, y: 0 })
     const fabRef = useRef<HTMLDivElement>(null)
-    const { user, isLoading } = useAuth()
+
+    // ✅ Use Zustand store
+    const user = useAuthStore(selectUser)
+    const isLoading = useAuthStore(selectIsLoading)
 
     // Map user fields to display
     const displayName = user?.name || user?.email || 'Guest'

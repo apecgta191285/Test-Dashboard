@@ -2,18 +2,21 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { AlertCircle, Home } from "lucide-react";
 import { useLocation } from "wouter";
-import { useAuth } from "@/contexts/AuthContext";
+import { useAuthStore, selectIsAuthenticated, selectIsLoading, selectIsInitialized } from "@/stores/auth-store";
 import { useEffect } from "react";
 
 export default function NotFound() {
   const [, setLocation] = useLocation();
-  const { isAuthenticated, isLoading } = useAuth();
+  // ✅ Use Zustand store
+  const isAuthenticated = useAuthStore(selectIsAuthenticated);
+  const isLoading = useAuthStore(selectIsLoading);
+  const isInitialized = useAuthStore(selectIsInitialized);
 
   useEffect(() => {
-    if (!isLoading && !isAuthenticated) {
+    if (isInitialized && !isLoading && !isAuthenticated) {
       setLocation("/login");
     }
-  }, [isLoading, isAuthenticated, setLocation]);
+  }, [isLoading, isAuthenticated, isInitialized, setLocation]);
 
   const handleGoHome = () => {
     setLocation(isAuthenticated ? "/dashboard" : "/login");

@@ -1,5 +1,12 @@
-import { useAuth } from '@/contexts/AuthContext';
+import { useEffect } from 'react';
 import { useLocation } from 'wouter';
+import {
+  useAuthStore,
+  selectIsAuthenticated,
+  selectUser,
+  selectIsLoading,
+  selectIsInitialized,
+} from '@/stores/auth-store';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -7,10 +14,23 @@ interface ProtectedRouteProps {
 }
 
 export function ProtectedRoute({ children, requiredRole }: ProtectedRouteProps) {
-  const { isAuthenticated, user, isLoading } = useAuth();
+  // ✅ Use Zustand selectors for optimized re-renders
+  const isAuthenticated = useAuthStore(selectIsAuthenticated);
+  const user = useAuthStore(selectUser);
+  const isLoading = useAuthStore(selectIsLoading);
+  const isInitialized = useAuthStore(selectIsInitialized);
+  const initializeAuth = useAuthStore((state) => state.initializeAuth);
   const [, setLocation] = useLocation();
 
-  if (isLoading) {
+  // Initialize auth on mount
+  useEffect(() => {
+    if (!isInitialized) {
+      initializeAuth();
+    }
+  }, [isInitialized, initializeAuth]);
+
+  // Wait for auth initialization
+  if (!isInitialized || isLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
@@ -21,11 +41,13 @@ export function ProtectedRoute({ children, requiredRole }: ProtectedRouteProps) 
     );
   }
 
+  // Redirect to login if not authenticated
   if (!isAuthenticated) {
     setLocation('/login');
     return null;
   }
 
+  // Check required role
   if (requiredRole && user?.role !== requiredRole) {
     setLocation('/dashboard');
     return null;

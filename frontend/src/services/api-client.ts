@@ -4,26 +4,10 @@ import axios, {
     AxiosError,
     InternalAxiosRequestConfig,
 } from 'axios';
+import { dispatchSessionExpired } from '@/lib/auth-events';
 
 const API_BASE_URL =
     import.meta.env.VITE_API_URL || 'http://localhost:3000/api/v1';
-
-// =============================================================================
-// Token Storage Helpers
-// =============================================================================
-const getAccessToken = () => localStorage.getItem('accessToken');
-const getRefreshToken = () => localStorage.getItem('refreshToken');
-
-const setTokens = (access: string, refresh: string) => {
-    localStorage.setItem('accessToken', access);
-    localStorage.setItem('refreshToken', refresh);
-};
-
-const clearTokens = () => {
-    localStorage.removeItem('accessToken');
-    localStorage.removeItem('refreshToken');
-    localStorage.removeItem('user');
-};
 
 // =============================================================================
 // Axios Instance
@@ -35,6 +19,31 @@ export const apiClient: AxiosInstance = axios.create({
     },
     timeout: 30000,
 });
+
+// =============================================================================
+// Token Helpers (Lazy import to avoid circular dependency)
+// =============================================================================
+const getAccessToken = (): string | null => {
+    // ✅ FIX: Import auth store lazily to avoid circular dependency
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { useAuthStore } = require('@/stores/auth-store');
+    return useAuthStore.getState().accessToken || localStorage.getItem('accessToken');
+};
+
+const getRefreshToken = (): string | null => {
+    const { useAuthStore } = require('@/stores/auth-store');
+    return useAuthStore.getState().refreshToken || localStorage.getItem('refreshToken');
+};
+
+const setTokens = (access: string, refresh: string): void => {
+    const { useAuthStore } = require('@/stores/auth-store');
+    useAuthStore.getState().setTokens(access, refresh);
+};
+
+const performLogout = (): void => {
+    const { useAuthStore } = require('@/stores/auth-store');
+    useAuthStore.getState().logout();
+};
 
 // =============================================================================
 // Refresh Token Queue (Prevent Race Conditions)
@@ -61,6 +70,7 @@ const processQueue = (error: Error | null, token: string | null = null) => {
 // =============================================================================
 apiClient.interceptors.request.use(
     (config: InternalAxiosRequestConfig) => {
+        // ✅ FIX: Get token from Zustand store
         const token = getAccessToken();
         if (token && config.headers) {
             config.headers.Authorization = `Bearer ${token}`;
@@ -108,11 +118,11 @@ apiClient.interceptors.response.use(
                     refreshToken,
                 });
 
-                // 🔧 FIX: Backend returns { success, data: { accessToken, refreshToken } }
+                // ✅ Sprint 4 Standard: Backend returns { success, data: { accessToken, refreshToken } }
                 const { accessToken, refreshToken: newRefreshToken } =
                     response.data.data;
 
-                // Update tokens
+                // ✅ FIX: Update tokens in Zustand store
                 setTokens(accessToken, newRefreshToken);
 
                 // Process queued requests
@@ -126,12 +136,12 @@ apiClient.interceptors.response.use(
             } catch (refreshError) {
                 // Refresh failed - logout user
                 processQueue(refreshError as Error, null);
-                clearTokens();
 
-                // Redirect to login
-                if (typeof window !== 'undefined') {
-                    window.location.href = '/login?expired=true';
-                }
+                // ✅ FIX: Logout via Zustand store
+                performLogout();
+
+                // ✅ FIX: Dispatch event instead of hard reload
+                dispatchSessionExpired();
 
                 return Promise.reject(refreshError);
             } finally {

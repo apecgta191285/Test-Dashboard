@@ -1,10 +1,10 @@
+import { useEffect } from 'react';
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/NotFound";
-import { Route, Switch } from "wouter";
+import { Route, Switch, useLocation } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
-import { AuthProvider } from "./contexts/AuthContext";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
 import ForgotPassword from "./pages/ForgotPassword";
@@ -18,6 +18,9 @@ import TrendAnalysis from "./pages/TrendAnalysis";
 import SeoWebAnalytics from "./pages/SeoWebAnalytics";
 import EcommerceInsights from "./pages/EcommerceInsights";
 import CrmLeadsInsights from "./pages/CrmLeadsInsights";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { useAuthStore } from '@/stores/auth-store';
+import { useAuthEventListener } from '@/lib/auth-events';
 
 function Router() {
   return (
@@ -43,38 +46,42 @@ function Router() {
   );
 }
 
-// NOTE: About Theme
-// - First choose a default theme according to your design style (dark or light bg), than change color palette in index.css
-//   to keep consistent foreground/background color across components
-// - If you want to make theme switchable, pass `switchable` ThemeProvider and use `useTheme` hook
-
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-
 // React Query Best Practice: ตั้งค่า staleTime และ cacheTime
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       staleTime: 30 * 1000,      // 30 วินาที - data จะถือว่า fresh ไม่ต้อง refetch
-      cacheTime: 5 * 60 * 1000,  // 5 นาที - เก็บ cache ไว้ (v4: cacheTime, v5: gcTime)
+      cacheTime: 5 * 60 * 1000,  // 5 นาที - เก็บ cache ไว้
       refetchOnWindowFocus: false, // ไม่ refetch เมื่อกลับมาที่ window
     },
   },
 });
 
 function App() {
+  const [, setLocation] = useLocation();
+  const initializeAuth = useAuthStore((state) => state.initializeAuth);
+  const logout = useAuthStore((state) => state.logout);
+
+  // ✅ Initialize auth on app mount
+  useEffect(() => {
+    initializeAuth();
+  }, [initializeAuth]);
+
+  // ✅ Handle session expiry events (soft navigation, no hard reload)
+  useAuthEventListener(() => {
+    logout();
+    setLocation('/login?expired=true');
+  });
+
   return (
     <QueryClientProvider client={queryClient}>
       <ErrorBoundary>
-        <ThemeProvider
-          defaultTheme="light"
-        // switchable
-        >
-          <AuthProvider>
-            <TooltipProvider>
-              <Toaster />
-              <Router />
-            </TooltipProvider>
-          </AuthProvider>
+        <ThemeProvider defaultTheme="light">
+          {/* ✅ REMOVED: AuthProvider - Zustand doesn't need a Provider */}
+          <TooltipProvider>
+            <Toaster />
+            <Router />
+          </TooltipProvider>
         </ThemeProvider>
       </ErrorBoundary>
     </QueryClientProvider>

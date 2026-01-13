@@ -1,13 +1,28 @@
 // src/stores/auth-store.ts
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { persist, createJSONStorage } from 'zustand/middleware';
 import type { User } from '@/types/api';
 import { apiClient } from '@/services/api-client';
+import { authEvents, AUTH_EVENTS } from '@/lib/auth-events';
+
+// =============================================================================
+// Types
+// =============================================================================
+interface RegisterData {
+    email: string;
+    password: string;
+    name: string;
+    companyName: string;
+}
 
 interface AuthState {
+    // State
     user: User | null;
+    accessToken: string | null;
+    refreshToken: string | null;
     isAuthenticated: boolean;
     isLoading: boolean;
+    isInitialized: boolean;
     error: string | null;
 
     // Actions
@@ -16,24 +31,26 @@ interface AuthState {
     logout: () => void;
     setUser: (user: User | null) => void;
     clearError: () => void;
-    checkAuth: () => void;
+    initializeAuth: () => void;
+    setTokens: (accessToken: string, refreshToken: string) => void;
 }
 
-interface RegisterData {
-    email: string;
-    password: string;
-    name: string;
-    companyName: string;
-}
-
+// =============================================================================
+// Store
+// =============================================================================
 export const useAuthStore = create<AuthState>()(
     persist(
-        (set) => ({
+        (set, get) => ({
+            // Initial State
             user: null,
+            accessToken: null,
+            refreshToken: null,
             isAuthenticated: false,
             isLoading: false,
+            isInitialized: false,
             error: null,
 
+            // Login Action
             login: async (email, password) => {
                 set({ isLoading: true, error: null });
                 try {
@@ -41,38 +58,60 @@ export const useAuthStore = create<AuthState>()(
                         email,
                         password,
                     });
+
+                    // ✅ Sprint 4 Standard: Extract from response.data.data
                     const { accessToken, refreshToken, user } = response.data.data;
 
+                    // Store tokens
                     localStorage.setItem('accessToken', accessToken);
                     localStorage.setItem('refreshToken', refreshToken);
 
-                    set({ user, isAuthenticated: true, isLoading: false });
+                    set({
+                        user,
+                        accessToken,
+                        refreshToken,
+                        isAuthenticated: true,
+                        isLoading: false,
+                        error: null,
+                    });
                 } catch (error: any) {
-                    const message = error.response?.data?.message || 'Login failed';
+                    const errorData = error.response?.data;
+                    let message = errorData?.message || 'Login failed';
 
                     // Handle account locked error
-                    if (error.response?.data?.error === 'ACCOUNT_LOCKED') {
-                        set({
-                            error: 'Account is locked. Please try again later or contact support.',
-                            isLoading: false,
-                        });
-                    } else {
-                        set({ error: message, isLoading: false });
+                    if (errorData?.error === 'ACCOUNT_LOCKED') {
+                        const lockoutMinutes = errorData.lockoutMinutes || 15;
+                        message = `Account is locked. Please try again in ${lockoutMinutes} minutes.`;
+                    } else if (errorData?.remainingAttempts !== undefined) {
+                        message = `Invalid credentials. ${errorData.remainingAttempts} attempts remaining.`;
                     }
+
+                    set({ error: message, isLoading: false });
                     throw error;
                 }
             },
 
+            // Register Action
             register: async (data) => {
                 set({ isLoading: true, error: null });
                 try {
                     const response = await apiClient.post('/auth/register', data);
+
+                    // ✅ Sprint 4 Standard: Extract from response.data.data
                     const { accessToken, refreshToken, user } = response.data.data;
 
+                    // Store tokens
                     localStorage.setItem('accessToken', accessToken);
                     localStorage.setItem('refreshToken', refreshToken);
 
-                    set({ user, isAuthenticated: true, isLoading: false });
+                    set({
+                        user,
+                        accessToken,
+                        refreshToken,
+                        isAuthenticated: true,
+                        isLoading: false,
+                        error: null,
+                    });
                 } catch (error: any) {
                     const message = error.response?.data?.message || 'Registration failed';
                     set({ error: message, isLoading: false });
@@ -80,36 +119,91 @@ export const useAuthStore = create<AuthState>()(
                 }
             },
 
+            // Logout Action
             logout: () => {
                 localStorage.removeItem('accessToken');
                 localStorage.removeItem('refreshToken');
-                set({ user: null, isAuthenticated: false, error: null });
+                set({
+                    user: null,
+                    accessToken: null,
+                    refreshToken: null,
+                    isAuthenticated: false,
+                    error: null,
+                });
             },
 
+            // Set User
             setUser: (user) => set({ user, isAuthenticated: !!user }),
 
+            // Clear Error
             clearError: () => set({ error: null }),
 
-            checkAuth: () => {
-                const token = localStorage.getItem('accessToken');
-                const userStr = localStorage.getItem('user');
+            // Set Tokens (for token refresh)
+            setTokens: (accessToken, refreshToken) => {
+                localStorage.setItem('accessToken', accessToken);
+                localStorage.setItem('refreshToken', refreshToken);
+                set({ accessToken, refreshToken });
+            },
 
-                if (token && userStr) {
-                    try {
-                        const user = JSON.parse(userStr);
-                        set({ user, isAuthenticated: true });
-                    } catch {
-                        set({ user: null, isAuthenticated: false });
-                    }
+            // Initialize Auth (called on app mount)
+            initializeAuth: () => {
+                const accessToken = localStorage.getItem('accessToken');
+                const refreshToken = localStorage.getItem('refreshToken');
+                const { user } = get();
+
+                if (accessToken && user) {
+                    set({
+                        accessToken,
+                        refreshToken,
+                        isAuthenticated: true,
+                        isInitialized: true,
+                    });
+                } else {
+                    set({
+                        accessToken: null,
+                        refreshToken: null,
+                        user: null,
+                        isAuthenticated: false,
+                        isInitialized: true,
+                    });
                 }
             },
         }),
         {
             name: 'auth-storage',
+            storage: createJSONStorage(() => localStorage),
             partialize: (state) => ({
                 user: state.user,
+                accessToken: state.accessToken,
+                refreshToken: state.refreshToken,
                 isAuthenticated: state.isAuthenticated,
             }),
+            onRehydrateStorage: () => {
+                // Called when store is rehydrated from localStorage
+                return (state: AuthState | undefined) => {
+                    if (state) {
+                        state.isInitialized = true;
+                    }
+                };
+            },
         }
     )
 );
+
+// =============================================================================
+// Auth Events Listener (Session Expired)
+// =============================================================================
+// Subscribe to session expired events from api-client
+authEvents.on(AUTH_EVENTS.SESSION_EXPIRED, () => {
+    useAuthStore.getState().logout();
+});
+
+// =============================================================================
+// Selectors (for optimized re-renders)
+// =============================================================================
+export const selectUser = (state: AuthState) => state.user;
+export const selectAccessToken = (state: AuthState) => state.accessToken;
+export const selectIsAuthenticated = (state: AuthState) => state.isAuthenticated;
+export const selectIsLoading = (state: AuthState) => state.isLoading;
+export const selectIsInitialized = (state: AuthState) => state.isInitialized;
+export const selectError = (state: AuthState) => state.error;

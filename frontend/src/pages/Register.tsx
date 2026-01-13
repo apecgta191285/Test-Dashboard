@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useAuth } from '@/contexts/AuthContext';
+import { useAuthStore } from '@/stores/auth-store';
 import { useLocation } from 'wouter';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -7,6 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Loader2, AlertCircle } from 'lucide-react';
 import { APP_LOGO, APP_TITLE } from '@/const';
+import { toast } from 'sonner';
 
 export default function Register() {
   const [formData, setFormData] = useState({
@@ -18,7 +19,9 @@ export default function Register() {
   });
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
-  const { register } = useAuth();
+
+  // ✅ Use Zustand store
+  const register = useAuthStore((state) => state.register);
   const [, setLocation] = useLocation();
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -49,10 +52,18 @@ export default function Register() {
     setIsLoading(true);
 
     try {
-      await register(formData.email, formData.password, formData.name, formData.companyName);
+      await register({
+        email: formData.email,
+        password: formData.password,
+        name: formData.name,
+        companyName: formData.companyName,
+      });
+      toast.success('Registration successful!');
       setLocation('/dashboard');
     } catch (err: any) {
-      setError(err.response?.data?.message || 'Registration failed. Please try again.');
+      const message = err.response?.data?.message || 'Registration failed. Please try again.';
+      setError(message);
+      toast.error(message);
     } finally {
       setIsLoading(false);
     }
@@ -95,6 +106,7 @@ export default function Register() {
                   onChange={handleChange}
                   required
                   disabled={isLoading}
+                  autoComplete="name"
                 />
               </div>
 
@@ -111,6 +123,7 @@ export default function Register() {
                   onChange={handleChange}
                   required
                   disabled={isLoading}
+                  autoComplete="email"
                 />
               </div>
 
@@ -126,6 +139,7 @@ export default function Register() {
                   onChange={handleChange}
                   required
                   disabled={isLoading}
+                  autoComplete="organization"
                 />
               </div>
 
@@ -142,6 +156,7 @@ export default function Register() {
                   onChange={handleChange}
                   required
                   disabled={isLoading}
+                  autoComplete="new-password"
                 />
               </div>
 
@@ -158,6 +173,7 @@ export default function Register() {
                   onChange={handleChange}
                   required
                   disabled={isLoading}
+                  autoComplete="new-password"
                 />
               </div>
 

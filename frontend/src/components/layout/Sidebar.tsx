@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useAuth } from '@/contexts/AuthContext';
+import { useAuthStore, selectUser } from '@/stores/auth-store';
 import { useLocation } from 'wouter';
 import { Button } from '@/components/ui/button';
 import { Menu, X, LogOut, BarChart3, Users, Zap, Settings, FileText, TrendingUp, Search, ShoppingBag, MessageSquare, Layers } from 'lucide-react';
@@ -8,7 +8,9 @@ import { UserRole } from '@/types/enums';
 
 export function Sidebar() {
     const [sidebarOpen, setSidebarOpen] = useState(true);
-    const { logout, user } = useAuth();
+    // ✅ Use Zustand store instead of useAuth()
+    const user = useAuthStore(selectUser);
+    const logout = useAuthStore((state) => state.logout);
     const [location, setLocation] = useLocation();
 
     interface NavItem {

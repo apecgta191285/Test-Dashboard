@@ -1,35 +1,69 @@
-import { useState } from 'react';
-import { useAuth } from '@/contexts/AuthContext';
-import { useLocation } from 'wouter';
+import { useState, useEffect } from 'react';
+import { useAuthStore, selectIsLoading, selectError } from '@/stores/auth-store';
+import { useLocation, useSearch } from 'wouter';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Loader2, AlertCircle } from 'lucide-react';
+import { Loader2, AlertCircle, AlertTriangle } from 'lucide-react';
 import { APP_LOGO, APP_TITLE } from '@/const';
+import { toast } from 'sonner';
 
 export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState('');
-  const { login } = useAuth();
+  const [localError, setLocalError] = useState('');
+  const [sessionExpired, setSessionExpired] = useState(false);
   const [, setLocation] = useLocation();
+  const searchString = useSearch();
+
+  // ✅ Use Zustand store
+  const login = useAuthStore((state) => state.login);
+  const clearError = useAuthStore((state) => state.clearError);
+  const isLoading = useAuthStore(selectIsLoading);
+  const storeError = useAuthStore(selectError);
+
+  // Check for session expired query param
+  useEffect(() => {
+    const params = new URLSearchParams(searchString);
+    if (params.get('expired') === 'true') {
+      setSessionExpired(true);
+      toast.warning('Your session has expired. Please login again.');
+    }
+  }, [searchString]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError('');
-    setIsLoading(true);
+    setLocalError('');
+    setSessionExpired(false);
+    clearError();
 
     try {
       await login(email, password);
+      toast.success('Login successful!');
       setLocation('/dashboard');
     } catch (err: any) {
-      setError(err.response?.data?.message || 'Login failed. Please try again.');
-    } finally {
-      setIsLoading(false);
+      const errorData = err.response?.data;
+
+      // ✅ Handle specific error types from Backend
+      if (errorData?.error === 'ACCOUNT_LOCKED') {
+        const lockoutMinutes = errorData.lockoutMinutes || 15;
+        const message = `Account locked. Please try again in ${lockoutMinutes} minutes.`;
+        setLocalError(message);
+        toast.error(message);
+      } else if (errorData?.remainingAttempts !== undefined) {
+        const message = `Invalid credentials. ${errorData.remainingAttempts} attempts remaining.`;
+        setLocalError(message);
+        toast.warning(message);
+      } else {
+        const message = errorData?.message || 'Login failed. Please try again.';
+        setLocalError(message);
+        toast.error(message);
+      }
     }
   };
+
+  const displayError = localError || storeError;
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background p-4">
@@ -49,10 +83,21 @@ export default function Login() {
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-4">
-              {error && (
+              {/* Session Expired Warning */}
+              {sessionExpired && (
+                <Alert variant="default" className="border-yellow-500 bg-yellow-50 dark:bg-yellow-900/20">
+                  <AlertTriangle className="h-4 w-4 text-yellow-600" />
+                  <AlertDescription className="text-yellow-700 dark:text-yellow-400">
+                    Your session has expired. Please login again.
+                  </AlertDescription>
+                </Alert>
+              )}
+
+              {/* Error Alert */}
+              {displayError && (
                 <Alert variant="destructive">
                   <AlertCircle className="h-4 w-4" />
-                  <AlertDescription>{error}</AlertDescription>
+                  <AlertDescription>{displayError}</AlertDescription>
                 </Alert>
               )}
 
@@ -68,6 +113,7 @@ export default function Login() {
                   onChange={(e) => setEmail(e.target.value)}
                   required
                   disabled={isLoading}
+                  autoComplete="email"
                 />
               </div>
 
@@ -83,6 +129,7 @@ export default function Login() {
                   onChange={(e) => setPassword(e.target.value)}
                   required
                   disabled={isLoading}
+                  autoComplete="current-password"
                 />
               </div>
 
@@ -115,8 +162,6 @@ export default function Login() {
             </div>
           </CardContent>
         </Card>
-
-
       </div>
     </div>
   );
