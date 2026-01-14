@@ -45,7 +45,8 @@ export class TikTokAdsController {
         private readonly oauthService: TikTokAdsOAuthService,
         private readonly configService: ConfigService,
     ) {
-        this.frontendUrl = this.configService.get<string>('FRONTEND_URL', 'http://localhost:3001');
+        // Use FRONTEND_URL from environment, fallback to Vite default port
+        this.frontendUrl = this.configService.get<string>('FRONTEND_URL', 'http://localhost:5173');
     }
 
     // ============================================

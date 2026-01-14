@@ -18,7 +18,8 @@ export class GoogleAnalyticsAuthController {
         private readonly configService: ConfigService,
     ) {
         // ✅ Use environment variable with fallback
-        this.frontendUrl = this.configService.get<string>('FRONTEND_URL', 'http://localhost:3001');
+        // Use FRONTEND_URL from environment, fallback to Vite default port
+        this.frontendUrl = this.configService.get<string>('FRONTEND_URL', 'http://localhost:5173');
     }
 
     @Get('url')

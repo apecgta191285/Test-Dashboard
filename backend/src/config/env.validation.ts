@@ -76,7 +76,7 @@ export const envValidationSchema = Joi.object({
             then: Joi.required().messages({
                 'any.required': 'FRONTEND_URL is required in production',
             }),
-            otherwise: Joi.optional().default('http://localhost:3001'),
+            otherwise: Joi.optional().default('http://localhost:5173'),
         }),
     // ============================================
     // Rate Limiting

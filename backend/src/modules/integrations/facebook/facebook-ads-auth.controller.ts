@@ -14,7 +14,8 @@ export class FacebookAdsAuthController {
         private readonly oauthService: FacebookAdsOAuthService,
         private readonly configService: ConfigService,
     ) {
-        this.frontendUrl = this.configService.get<string>('FRONTEND_URL', 'http://localhost:3001');
+        // Use FRONTEND_URL from environment, fallback to Vite default port
+        this.frontendUrl = this.configService.get<string>('FRONTEND_URL', 'http://localhost:5173');
     }
 
     @Get('url')

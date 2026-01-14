@@ -6,10 +6,15 @@ import { ConfigService } from '@nestjs/config';
 
 @Controller('auth/line')
 export class LineAdsController {
+    private readonly frontendUrl: string;
+
     constructor(
         private readonly lineAdsOAuthService: LineAdsOAuthService,
         private readonly configService: ConfigService,
-    ) { }
+    ) {
+        // Use FRONTEND_URL from environment, fallback to Vite default port
+        this.frontendUrl = this.configService.get<string>('FRONTEND_URL', 'http://localhost:5173');
+    }
 
     @Get('url')
     @UseGuards(JwtAuthGuard)
@@ -28,11 +33,11 @@ export class LineAdsController {
     ) {
         try {
             await this.lineAdsOAuthService.handleCallback(code, state);
-            const frontendUrl = this.configService.get('FRONTEND_URL') || 'http://localhost:3001';
-            return res.redirect(`${frontendUrl}/integrations?status=success&platform=line`);
+            return res.redirect(`${this.frontendUrl}/integrations?status=success&platform=line`);
         } catch (error) {
-            const frontendUrl = this.configService.get('FRONTEND_URL') || 'http://localhost:3001';
-            return res.redirect(`${frontendUrl}/integrations?status=error&message=${encodeURIComponent(error.message)}`);
+            // Ensure error message is safely encoded for URL
+            const errorMessage = encodeURIComponent(error?.message || 'Unknown error');
+            return res.redirect(`${this.frontendUrl}/integrations?status=error&message=${errorMessage}&platform=line`);
         }
     }
 }
